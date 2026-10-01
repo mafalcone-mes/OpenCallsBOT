@@ -1,0 +1,44 @@
+<form class="filters" method="get">
+  <input type="search" name="q" value="{{ f.q or '' }}" placeholder="Search">
+  <select name="type" onchange="this.form.submit()">
+    <option value="">All types</option>
+    {% for t in opts.types %}<option value="{{ t }}" {{ 'selected' if f.type == t }}>{{ present.TYPE_LABELS.get(t, t) }}</option>{% endfor %}
+  </select>
+  <select name="region" onchange="this.form.submit()">
+    <option value="">Everywhere</option>
+    {% for v, l in [('IT','Italy'),('EU','Europe'),('world','Rest of world')] %}<option value="{{ v }}" {{ 'selected' if f.region == v }}>{{ l }}</option>{% endfor %}
+  </select>
+  <select name="remote" onchange="this.form.submit()">
+    <option value="">On site or remote</option>
+    <option value="yes" {{ 'selected' if f.remote == 'yes' }}>Remote / online</option>
+    <option value="no" {{ 'selected' if f.remote == 'no' }}>On site</option>
+  </select>
+  <select name="money" onchange="this.form.submit()">
+    <option value="">Any money</option>
+    {% for k, l in present.MONEY_LABELS.items() %}<option value="{{ k }}" {{ 'selected' if f.money == k }}>{{ l }}</option>{% endfor %}
+  </select>
+  <select name="within" onchange="this.form.submit()">
+    <option value="">Any deadline</option>
+    {% for d in [7, 14, 30, 60] %}<option value="{{ d }}" {{ 'selected' if f.within == d|string }}>Within {{ d }} days</option>{% endfor %}
+  </select>
+  <select name="lang" onchange="this.form.submit()">
+    <option value="">Any language</option>
+    {% for l in opts.langs %}<option value="{{ l }}" {{ 'selected' if f.lang == l }}>Apply in {{ l | upper }}</option>{% endfor %}
+  </select>
+  <select name="elig" onchange="this.form.submit()">
+    <option value="">Any eligibility</option>
+    {% for v, l in [('ok','Eligible'),('check','Check'),('likely_ineligible','Likely ineligible')] %}<option value="{{ v }}" {{ 'selected' if f.elig == v }}>{{ l }}</option>{% endfor %}
+  </select>
+  <select name="source" onchange="this.form.submit()">
+    <option value="">All sources</option>
+    {% for s in opts.sources %}<option value="{{ s }}" {{ 'selected' if f.source == s }}>{{ s }}</option>{% endfor %}
+  </select>
+  <select name="status" onchange="this.form.submit()">
+    <option value="">Not dismissed</option>
+    {% for v, l in [('favourite','Favourites'),('tracked','Applications'),('dismissed','Dismissed')] %}<option value="{{ v }}" {{ 'selected' if f.status == v }}>{{ l }}</option>{% endfor %}
+  </select>
+  <label class="check"><input type="checkbox" name="nofee" value="1" {{ 'checked' if f.nofee }} onchange="this.form.submit()"> No fee</label>
+  <label class="check"><input type="checkbox" name="housing" value="1" {{ 'checked' if f.housing }} onchange="this.form.submit()"> Housing covered</label>
+  <button class="btn">Apply</button>
+  {% if f %}<a class="btn ghost" href="?">Clear</a>{% endif %}
+</form>

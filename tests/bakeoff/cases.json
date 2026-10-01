@@ -1,0 +1,17 @@
+[
+  {"id": "01", "lang": "en", "is_opportunity": true, "type": ["fellowship"], "deadline": "2026-10-25", "money_kind": ["salary", "stipend"], "amount": 27556, "country": "GB"},
+  {"id": "02", "lang": "en", "is_opportunity": true, "type": ["residency"], "deadline": "2026-10-18", "money_kind": ["fee_paid_to_you", "stipend", "covers_costs", "grant"], "amount": 15000, "country": "IT"},
+  {"id": "03", "lang": "en", "is_opportunity": true, "type": ["grant"], "deadline": "2026-10-01", "money_kind": ["grant", "prize"], "amount": [10000, 50000]},
+  {"id": "04", "lang": "en", "is_opportunity": true, "type": ["grant", "open_call"], "deadline": "2026-10-16"},
+  {"id": "05", "lang": "it", "is_opportunity": true, "type": ["commission", "competition", "open_call"], "deadline": "2026-11-01", "money_kind": ["fee_paid_to_you", "prize"], "amount": 15000, "country": "IT"},
+  {"id": "06", "lang": "it", "is_opportunity": true, "type": ["residency"], "deadline": "2026-09-05", "money_kind": ["covers_costs", "stipend"], "age_max": 35, "country": "QA"},
+  {"id": "07", "lang": "it", "is_opportunity": true, "type": ["open_call", "commission"], "deadline": "2026-09-20", "money_kind": ["fee_paid_to_you"], "amount": 1000, "country": "IT"},
+  {"id": "08", "lang": "it", "is_opportunity": true, "type": ["competition", "open_call"], "deadline": "2026-08-09", "country": "IT"},
+  {"id": "09", "lang": "en", "is_opportunity": true, "type": ["job", "research_position"], "deadline": "2026-11-09", "money_kind": ["salary"], "country": "SE"},
+  {"id": "10", "lang": "en", "is_opportunity": true, "type": ["commission", "competition", "open_call"], "deadline": "2026-10-06", "country": "IT"},
+  {"id": "11", "lang": "en", "is_opportunity": true, "type": ["job"], "deadline": "2026-10-19", "money_kind": ["salary"], "country": "PL"},
+  {"id": "12", "lang": "en", "is_opportunity": true, "type": ["research_position", "job"], "deadline": "2026-10-20", "money_kind": ["salary"], "country": "NL"},
+  {"id": "13", "lang": "en", "is_opportunity": true, "type": ["grant"], "deadline": "2027-04-08", "money_kind": ["grant"]},
+  {"id": "14", "lang": "it", "is_opportunity": false},
+  {"id": "15", "lang": "it", "is_opportunity": false}
+]

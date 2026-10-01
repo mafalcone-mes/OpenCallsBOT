@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Taste{% endblock %}
+{% block main %}
+<h1>What the app thinks you like</h1>
+<p class="lede">Built from your portfolio, your preferences file, the examples you add, and your favourites and dismissals (older signals fade). Correct it below; your corrections go into every ranking.</p>
+{% if prefill.get('added') %}<div class="notice">Example saved. It's being read in the background; refresh this page in a minute.</div>{% endif %}
+
+<div class="two" style="margin-top:24px">
+  <div>
+    <div class="box">
+      <h3>Summary</h3>
+      {% if taste_sum %}
+        <p style="margin:8px 0">{{ taste_sum.paragraph }}</p>
+        {% if taste_sum.themes %}<p class="small"><span class="muted">Themes:</span> {{ taste_sum.themes | join(' · ') }}</p>{% endif %}
+        {% if taste_sum.types %}<p class="small"><span class="muted">Types:</span> {{ taste_sum.types | join(' · ') }}</p>{% endif %}
+        {% if taste_sum.organisations %}<p class="small"><span class="muted">Organisations:</span> {{ taste_sum.organisations | join(' · ') }}</p>{% endif %}
+        {% if taste_sum.red_flags %}<p class="small warn"><span class="muted">Red flags:</span> {{ taste_sum.red_flags | join(' · ') }}</p>{% endif %}
+      {% else %}
+        <p class="muted small">No summary yet.</p>
+      {% endif %}
+      <form method="post" action="/taste/summary" style="margin-top:10px"><button class="btn">{{ 'Rewrite summary' if taste_sum else 'Write summary' }}</button></form>
+    </div>
+
+    <div class="box" style="margin-top:16px">
+      <h3>From the numbers</h3>
+      <p class="small muted">{{ stats.n_pos }} positive and {{ stats.n_neg }} negative signals · taste weight now {{ '%.2f' | format(scored.get('w_taste', 0)) }} (full at {{ 15 }} effective examples, currently {{ '%.1f' | format(scored.get('n_eff', 0)) }})</p>
+      {% if stats.themes %}<p class="small" style="margin-top:8px"><span class="muted">Words in what you like:</span> {{ stats.themes | join(', ') }}</p>{% endif %}
+      {% if stats.anti_themes %}<p class="small"><span class="muted">Words in what you don't:</span> {{ stats.anti_themes | join(', ') }}</p>{% endif %}
+      {% if stats.types %}<p class="small"><span class="muted">Types:</span> {% for t, n in stats.types %}{{ present.TYPE_LABELS.get(t, t) }} ({{ n }}){{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
+      {% if stats.orgs %}<p class="small"><span class="muted">Organisations:</span> {% for t, n in stats.orgs %}{{ t }}{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
+      {% if stats.red_flags %}<p class="small"><span class="muted">Your “why not” notes:</span> {{ stats.red_flags | join(' · ') }}</p>{% endif %}
+    </div>
+
+    <form class="box" id="corrections" style="margin-top:16px" method="post" action="/taste/statements">
+      <h3>Your corrections</h3>
+      <p class="small muted">One statement per line, e.g. “I'm not interested in pure UX roles at tech companies”. Each line counts like an example you liked, and is read by the model when it explains matches. Saved to preferences.toml.</p>
+      {% if prefill.get('saved') == 'corrections' %}
+      <div class="notice">Saved {{ statements | length }} correction{{ 's' if statements | length != 1 }}. They change the ranking at the next scoring: press <strong>Re-score now</strong> (about 10 minutes), or they'll apply at your next Refresh. Corrections change the ranking of what's already found; to find new <em>kinds</em> of calls, add sources or job searches in <code>preferences.toml</code>.</div>
+      {% endif %}
+      <textarea name="text">{{ statements | join('\n') }}</textarea>
+      <button class="btn" style="margin-top:8px">Save corrections</button>
+    </form>
+    <form method="post" action="/rescore" style="margin-top:8px"><button class="btn {{ 'primary' if prefill.get('saved') }}">Re-score now</button></form>
+
+    <div class="box" style="margin-top:16px">
+      <h3>Is it learning?</h3>
+      <p class="small muted">Hides some of your examples, mixes them into the scraped calls, and checks where they rank without and with your taste.</p>
+      {% if evals %}
+      <table>
+        <tr><th>When</th><th>Examples</th><th>Held-out rank (cold → taste)</th><th>AUC (cold → taste)</th></tr>
+        {% for e in evals[-6:] | reverse %}{% if e.cold %}
+        <tr><td class="small">{{ e.at[:10] }}</td><td>{{ e.n_pos }}+ / {{ e.n_neg }}−</td>
+          <td>top {{ ((1 - e.cold.pct) * 100) | round | int }}% → <strong>top {{ ((1 - e.taste.pct) * 100) | round | int }}%</strong></td>
+          <td>{{ e.cold.auc if e.cold.auc is not none else '—' }} → <strong>{{ e.taste.auc if e.taste.auc is not none else '—' }}</strong></td></tr>
+        {% endif %}{% endfor %}
+      </table>
+      {% endif %}
+      <form method="post" action="/taste/eval" style="margin-top:10px"><button class="btn">Run the check</button></form>
+    </div>
+  </div>
+
+  <div>
+    {% include "_add_form.html" %}
+    <p class="small muted" style="margin-top:8px">Bookmarklet: drag this to your bookmarks bar, then click it on any call's page (select text first if the page is behind a login):
+      <a class="btn" href="javascript:(()=>{window.open('http://127.0.0.1:8765/add?url='+encodeURIComponent(location.href)+'&title='+encodeURIComponent(document.title)+'&sel='+encodeURIComponent(String(getSelection())),'_blank')})()">+ Opportunity example</a></p>
+
+    {% if suggestions %}
+    <div class="box" id="suggestions" style="margin-top:16px">
+      <h3>Suggested sources to watch</h3>
+      <p class="small muted">Found from organisations of examples you liked. Nothing is watched until you accept.</p>
+      {% for s in suggestions %}
+      <form method="post" action="/sources/suggestion" style="margin-top:10px">
+        <input type="hidden" name="url" value="{{ s.url }}"><input type="hidden" name="name" value="{{ s.name }}">
+        <strong>{{ s.name }}</strong> <a class="small muted" href="{{ s.url }}" target="_blank">{{ s.url }}</a>
+        <div style="display:flex; gap:6px; margin-top:4px"><button class="btn" name="action" value="accept">Watch it</button><button class="btn ghost" name="action" value="reject">No</button></div>
+      </form>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <h2>Examples ({{ examples | length }})</h2>
+    {% for ex in examples | reverse %}
+    <div class="mini">
+      <div style="display:flex; gap:8px; align-items:baseline">
+        <span class="chip {{ 'money' if ex.label == 'interested' else 'fee' }}">{{ 'Interested' if ex.label == 'interested' else 'Not for me' }}</span>
+        <strong style="flex:1">{{ ex.extracted.get('title_en') or ex.url or ex.id }}</strong>
+        <form method="post" action="/examples/{{ ex.id }}/remove"><button class="btn ghost" title="Remove">✕</button></form>
+      </div>
+      {% if ex.why %}<p class="small" style="margin-top:4px">“{{ ex.why }}”</p>{% endif %}
+      <p class="small muted">{{ ex.added[:10] }}{% if ex.extracted.get('org_name') %} · {{ ex.extracted.org_name }}{% endif %}{% if ex.url %} · <a href="{{ ex.url }}" target="_blank">link</a>{% endif %} · data/examples/{{ ex.id }}.md</p>
+    </div>
+    {% else %}
+    <p class="muted small">No examples yet. The app works without them (portfolio + preferences), and gets noticeably better after 10 to 20.</p>
+    {% endfor %}
+
+    <h2 id="references">Work you admire ({{ refs | length }})</h2>
+    <p class="small muted">Projects by studios in <code>[[reference_work]]</code> of preferences.toml. They aren't places to look for vacancies: they describe the work you want to do. Together they weigh like {{ ref_total }} liked examples, and the closest ones are shown to the model when it explains a match. Remove any that don't represent you.</p>
+    <form method="post" action="/references/update" style="margin:8px 0"><button class="btn">{{ 'Update reference projects' if refs else 'Read reference projects now' }}</button></form>
+    {% for studio, items in refs | groupby('studio') %}
+    <details class="mini"><summary><strong>{{ studio }}</strong> · {{ items | length }} projects</summary>
+      {% for r in items %}
+      <div style="display:flex; gap:8px; align-items:baseline; margin-top:6px">
+        <a class="small" style="flex:1" href="{{ r.url }}" target="_blank" rel="noopener">{{ r.title }}</a>
+        <form method="post" action="/references/remove"><input type="hidden" name="ref_id" value="{{ r.id }}"><button class="btn ghost" title="Remove">✕</button></form>
+      </div>
+      {% endfor %}
+    </details>
+    {% endfor %}
+
+    {% if sigs %}
+    <h2>From your clicks</h2>
+    {% for s in sigs %}{% set t = titles.get(s.ref[4:]) %}
+      <p class="small">{{ '★' if s.label == 'favourite' else '✓' if s.label == 'applied' else '✕' }}
+        {% if t %}<a href="/o/{{ t[0] }}">{{ t[1] }}</a>{% else %}{{ s.ref[4:] }}{% endif %}
+        <span class="muted">· weight {{ '%.2f' | format(s.w) }}{{ ' · ' ~ s.why if s.why }}</span></p>
+    {% endfor %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

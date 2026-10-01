@@ -1,0 +1,29 @@
+<div id="brief-box" {% if brief_job and brief_job.state == 'running' %}hx-get="/o/{{ o.id }}/brief-status" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
+{% if brief_job and brief_job.state == 'running' %}
+  <p class="muted">Preparing the brief…</p>
+  <div class="log">{% for line in brief_job.log[-8:] %}{{ line }}
+{% endfor %}</div>
+{% else %}
+  {% if brief_job and brief_job.state == 'failed' %}<div class="notice">Brief failed: {{ brief_job.error }}</div>{% endif %}
+  {% if brief %}
+    <p class="small muted">Last prepared {{ brief.at[:16] | replace('T', ' ') }}</p>
+    <ol style="margin: 10px 0 10px 18px">
+      {% for s in brief.selected %}<li><strong>{{ s.project }}</strong> as {{ s.category }}{% if s.images is defined %} · {{ s.images }} images{% endif %}<br><span class="small muted">{{ s.why }}{% if s.stress %} Stress: {{ s.stress }}{% endif %}</span></li>{% endfor %}
+    </ol>
+    <p style="display:flex; gap:8px; flex-wrap:wrap">
+      <a class="btn" href="/files?path={{ (brief.dir ~ '/brief.md') | urlencode }}" target="_blank">brief.md</a>
+      {% if brief.brief_pdf %}<a class="btn" href="/files?path={{ brief.brief_pdf | urlencode }}" target="_blank">brief.pdf</a>{% endif %}
+      {% if brief.portfolio_pdf and brief.portfolio_pdf.path %}<a class="btn primary" href="/files?path={{ brief.portfolio_pdf.path | urlencode }}" target="_blank">portfolio.pdf</a>{% endif %}
+      <a class="btn" href="/files?path={{ (brief.dir ~ '/deadlines.ics') | urlencode }}">deadlines.ics</a>
+    </p>
+    {% if brief.portfolio_pdf and brief.portfolio_pdf.error %}
+      <div class="notice">Portfolio PDF not generated: {{ brief.portfolio_pdf.error }}{% if brief.portfolio_pdf.manual %}<br>Run it by hand: <code>{{ brief.portfolio_pdf.manual }}</code>{% endif %}</div>
+    {% endif %}
+    <p class="small muted">Folder: {{ brief.dir }}</p>
+  {% endif %}
+  <form method="post" action="/o/{{ o.id }}/brief" style="margin-top:10px; display:flex; gap:8px">
+    <button class="btn primary" name="pdf" value="1">{{ 'Prepare again' if brief else 'Prepare brief + portfolio PDF' }}</button>
+    <button class="btn" name="pdf" value="0">Brief only</button>
+  </form>
+{% endif %}
+</div>

@@ -1,0 +1,72 @@
+# {{ o.title_en or o.title_original }}
+
+**{{ o.org_name or "Organisation unclear" }}** · {{ type }} · {{ location }}
+
+> Always check the official call before applying: [{{ o.canonical_url }}]({{ o.canonical_url }})
+{%- if o.from_example %} (added by you as an example){% endif %}
+
+| | |
+|---|---|
+| Deadline | {{ deadline }}{% if o.field_confidence.deadline and not o.field_confidence.deadline.verified %} ⚠ unverified{% endif %} |
+| Money | {{ money }}{% if o.field_confidence.money_kind and not o.field_confidence.money_kind.verified %} ⚠ unverified{% endif %} |
+| Duration / start | {{ o.duration_text or "—" }}{% if o.start_date %} · starts {{ o.start_date }}{% endif %} |
+| Languages to apply in | {{ (o.application_languages or []) | join(", ") or "—" }} |
+{%- if m.eligibility_flag and m.eligibility_flag != "ok" %}
+| Eligibility | {{ m.eligibility_flag | replace("_", " ") }}: {{ (m.eligibility_notes or []) | join("; ") }} |
+{%- endif %}
+
+{{ o.summary_en }}
+
+## Projects to present
+
+{% for s in selected -%}
+{{ loop.index }}. **{{ s.project }}**, as {{ s.category }}{% if s.images is defined %} ({{ s.images }} images){% endif %}
+   - Why: {{ s.why }}
+   {%- if s.stress %}
+   - Stress: {{ s.stress }}
+   {%- endif %}
+{% endfor %}
+{%- if limits.pages or limits.mb %}
+Limits found in the call: {% if limits.pages %}max {{ limits.pages }} pages{% endif %}{% if limits.pages and limits.mb %}, {% endif %}{% if limits.mb %}max {{ limits.mb }} MB{% endif %}.
+{%- endif %}
+
+## Checklist
+
+{% for c in checklist -%}
+- [ ] **{{ c.label }}**{% if not c.required %} (optional){% endif %}{% if c.details %}: {{ c.details }}{% endif %}{% if c.status %} · _{{ c.status }}_{% endif %}
+{% else -%}
+- [ ] No document list found in the call: read the original.
+{% endfor %}
+
+## Dates
+
+- Application deadline: {{ deadline }}
+{% for d in (o.other_dates or []) -%}
+- {{ d.label }}: {{ d.date }}
+{% endfor %}
+
+## Portfolio PDF
+
+{% if pdf.path -%}
+Generated: `{{ pdf.path }}` (selection `{{ plan | join(",") }}`{% if anonymous %}, without cover and about pages{% endif %}).
+{%- elif pdf.error -%}
+Not generated: {{ pdf.error }}
+{%- if pdf.manual %}
+
+Run it by hand:
+
+```
+{{ pdf.manual }}
+```
+{%- endif %}
+{%- else -%}
+Not requested.
+{%- endif %}
+{% if warnings %}
+
+## Before sending
+
+{% for w in warnings -%}
+- {{ w }}
+{% endfor %}
+{%- endif %}

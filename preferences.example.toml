@@ -1,0 +1,120 @@
+# vacancies_searcher preferences: YOUR profile facts, taste, weights.
+# Copy this file to preferences.toml and fill it in (INSTALL_FOR_AI.md walks
+# an AI assistant through it). preferences.toml is personal: it is not in git.
+#
+# Sources, watched pages and studios are NOT here: they live in the shared
+# Google Sheet below, which everyone using this app maintains together.
+
+[sheet]
+# Master list of sources / watched pages / studios / exclusions.
+# The app reads its public CSV link at every refresh (no login) and keeps a
+# local copy in data/sheet-cache.csv. If it can't be read, sources-snapshot.csv
+# (shipped with the app) is used.
+enabled = true
+url = "https://docs.google.com/spreadsheets/d/1O_NuJp8IKuq5gi728MmpWqxAHr788Y2zTVPKVNmiGJg/edit?usp=sharing"
+
+[portfolio]
+# Where your portfolio is, and in which form:
+#   "folder"  - a folder with profile.md + projects/*.md (see portfolio-template/)  <- recommended
+#   "pdf"     - a folder containing your portfolio PDF(s) and optionally cv.pdf
+#   "website" - a Next.js portfolio site in the exact format this app was built
+#               for (content/projects.csv, content/categories.ts, lib/site.ts)
+format = "folder"
+dir = "../my-portfolio"
+# Only for format = "website": where the site runs if you start it yourself;
+# otherwise the app starts it on own_port to export tailored portfolio PDFs.
+base = "http://localhost:3000"
+own_port = 3107
+
+[me]
+# Facts used ONLY to flag eligibility and the application language. Never shared.
+# Leave a value empty ("" / 0 / []) when you'd rather not use it.
+birth_year = 0
+citizenships = []              # ISO country codes, e.g. ["IT"]
+residence_country = ""         # e.g. "NL"; empty = residence-restricted calls get "check eligibility"
+degrees = []                   # e.g. [{ level = "MA", field = "Design", school = "...", year = 2024 }]
+# Your level and the formats you are open to (used by the model that explains matches)
+seniority = ""                 # e.g. "junior", "mid-level", "senior"
+open_to = []                   # e.g. ["internships", "freelance work", "residencies"]
+# Languages you would apply in; level: native | fluent | working | basic
+languages = {}                 # e.g. { it = "native", en = "fluent" }
+# Optional: added to the crawler User-Agent so site owners can reach you. Empty = not sent.
+contact_email = ""
+
+[taste]
+# Studios / people whose work you admire (their names also count as keywords).
+reference_studios = []
+# Words that make a call interesting to you. Whole words; end with * for a stem
+# (fotograf* = fotografo, fotografia...). Write them in every language you read.
+keywords_plus = []
+# Words that make a call wrong for you (seniority, fields you don't want...).
+keywords_minus = []
+# Fields next to yours, shown in the Discovery area.
+adjacent_fields = []
+# Hard hides (only used if [intake].enabled = true). Money can never be used here.
+hide_if = []
+# Your own corrections, written in the Taste view (one statement per line).
+statements = []
+
+[intake]
+# Optional title rules (off by default; the scoring learns from your stars instead).
+# When on: sources with title_filter = true count a posting only if its TITLE
+# matches field_titles, and titles matching [taste].hide_if are hidden.
+enabled = false
+field_titles = ''
+
+[weights]
+portfolio = 0.4        # similarity to your projects (context, not the main criterion)
+taste_max = 2.0        # your stars, examples, corrections and references; ramps up with signals
+taste_full_at = 15     # full taste weight after ~15 signals
+keywords = 0.5
+source = 0.2
+negative_lambda = 0.7
+llm_blend = 0.4        # final = (1-b)*prelim + b*llm
+rerank_top_k = 60      # how many of the top matches the local model explains each time
+discovery_share = 0.2
+reference_total = 3.0  # all reference projects together weigh like ~3 liked examples
+# Small bonus by region (remote counts as reachable). Adjust to where you want to work.
+region = { IT = 0.2, EU = 0.2, remote = 0.2, world = 0.0, unknown = 0.1 }
+
+[signals]
+# weight, half-life in days. Dismiss reasons that are not about taste count 0.
+example = { weight = 1.0, half_life = 365 }
+applied = { weight = 0.8, half_life = 365 }
+favourite = { weight = 0.6, half_life = 180 }
+dismiss_taste = { weight = -0.5, half_life = 180 }
+
+[llm]
+# Local models served by Ollama. INSTALL_FOR_AI.md picks them from your RAM.
+host = "http://127.0.0.1:11434"
+model = "qwen3.5:9b"
+fallback_model = "qwen3:8b"
+embed_model = "bge-m3"
+num_ctx = 6144
+
+[fetch]
+min_delay_s = 3.0
+max_delay_s = 5.0
+source_min_interval_h = 12
+detail_pages_per_source = 25
+
+[search]
+# Job boards (Indeed via JobSpy; LinkedIn is never used). Fill in YOUR roles.
+countries = []                 # Indeed country names, e.g. ["netherlands", "italy", "germany"]
+results_per_query = 25
+max_searches = 40              # requests per refresh; query x country pairs rotate
+hours_old = 336
+queries = []                   # English job titles, e.g. ["junior graphic designer", "photographer"]
+
+[search.local]
+# Job titles in each country's language, e.g. italy = ["grafico junior", "fotografo"]
+
+# Reference work (optional): studios whose PROJECTS describe the work you want.
+# Their project pages train your taste; they are not vacancy sources. Example:
+#
+# [[reference_work]]
+# name = "Some Studio"
+# kind = "html_list"               # html_list | wp_api | fa_api | sections
+# url = "https://example.org/projects/"
+# link_pattern = 'https://example\.org/projects/[^/?#]+'
+# max_projects = 40

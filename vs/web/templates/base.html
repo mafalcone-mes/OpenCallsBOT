@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Opportunities{% endblock %} · vacancies searcher</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css">
+{% if tokens %}<style>:root { {% for k, v in tokens.items() %}--{{ k }}: {{ v }}; {% endfor %} }</style>{% endif %}
+<script src="/static/htmx.min.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/">Opportunities</a>
+  <nav class="nav">
+    <a href="/" class="{{ 'on' if view == 'feed' }}">Feed</a>
+    <a href="/discovery" class="{{ 'on' if view == 'discovery' }}">Discovery</a>
+    <a href="/calendar" class="{{ 'on' if view == 'calendar' }}">Calendar</a>
+    <a href="/tracker" class="{{ 'on' if view == 'tracker' }}">Applications</a>
+    <a href="/studios" class="{{ 'on' if view == 'studios' }}">Studios</a>
+    <a href="/taste" class="{{ 'on' if view == 'taste' }}">Taste</a>
+    <a href="/sources" class="{{ 'on' if view == 'sources' }}">Sources</a>
+  </nav>
+  <div class="status">
+    {% if deadlines_week %}<a href="/calendar" class="warn">{{ deadlines_week }} tracked deadline{{ 's' if deadlines_week != 1 }} this week</a>{% endif %}
+    {% if last_refresh_days is none %}<span class="stale">Never refreshed</span>
+    {% elif last_refresh_days >= 7 %}<span class="stale">Last refreshed {{ last_refresh_days }} days ago</span>
+    {% else %}<span>Refreshed {{ 'today' if last_refresh_days == 0 else last_refresh_days ~ ' day' ~ ('s' if last_refresh_days > 1 else '') ~ ' ago' }}</span>{% endif %}
+    <form method="post" action="/refresh"><button class="btn {{ 'primary' if not progress.running }}" {{ 'disabled' if progress.running }}>{{ 'Refreshing…' if progress.running else 'Refresh' }}</button></form>
+  </div>
+</header>
+{% if progress.running %}
+<div hx-get="/progress" hx-trigger="every 3s" hx-swap="innerHTML" style="padding: 0 32px">{% include "_progress.html" %}</div>
+{% endif %}
+<main>
+{% if portfolio is not none and portfolio.__class__.__name__ != 'Portfolio' %}
+  <div class="notice">Could not read the portfolio website: {{ portfolio }}</div>
+{% endif %}
+{% if prefs_error %}<div class="notice">{{ prefs_error }}</div>{% endif %}
+{% if sheet_error %}<div class="notice">Sources sheet: {{ sheet_error }}</div>{% endif %}
+{% block main %}{% endblock %}
+</main>
+</body>
+</html>

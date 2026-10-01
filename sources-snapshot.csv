@@ -1,0 +1,234 @@
+﻿kind,id,name,enabled,url,how_read,settings,weight,opportunity_type,tags,city,country,studio_types,description,jobs_url,notes
+source,on-the-move,on-the-move,TRUE,https://on-the-move.org/feed,rss,,1.0,open_call,,,,,,,
+source,resartis,resartis,TRUE,https://resartis.org/open-calls/,html_list,"{""link_pattern"": ""https://resartis\\.org/open-call/[^/]+/"", ""max_items"": 25}",1.0,residency,,,,,,,
+source,residency-unlimited,residency-unlimited,TRUE,https://residencyunlimited.org/feed/,rss,,0.6,open_call,,,,,,,
+source,artapartofculture,artapartofculture,TRUE,https://www.artapartofculture.net/feed/,rss,"{""require"": ""bando|open call|call for|residenz|residency|premio|concorso|candidatur|scadenza|borsa|fellowship|opportunit""}",0.5,open_call,,,,,,,
+source,exibart,exibart,TRUE,https://www.exibart.com/categoria/bandi-e-concorsi/feed/,rss,,0.8,open_call,,,,,,,
+source,eu-funding,eu-funding,TRUE,https://ec.europa.eu/info/funding-tenders/opportunities/portal/screen/opportunities/calls-for-proposals,eu_ft,"{""title_filter"": true, ""queries"": [""Creative Europe"", ""culture"", ""artistic residency"", ""MSCA postdoctoral""]}",0.5,grant,,,,,,,
+source,euraxess,euraxess,TRUE,https://euraxess.ec.europa.eu/jobs/search,euraxess,"{""title_filter"": true, ""fields"": [22, 26, 32, 66, 71, 94, 211, 70, 75, 90], ""pages"": 1}",0.8,research_position,,,,,,,
+source,propublica,propublica,TRUE,https://www.propublica.org/jobs,html_list,"{""link_pattern"": ""https://job-boards\\.greenhouse\\.io/propublica/jobs/\\d+""}",0.8,job,,,,,,,
+source,ejc-funding,ejc-funding,TRUE,https://ejc.net/funding,html_list,"{""link_pattern"": ""https://ejc\\.net/funding/[^/?#]+""}",0.9,grant,,,,,,,
+source,villamedia-vacatures,villamedia-vacatures,TRUE,https://www.villamedia.nl/feeds/vacatures,rss,,0.8,job,,,,,,,
+source,villamedia-opdrachten,villamedia-opdrachten,TRUE,https://www.villamedia.nl/feeds/opdrachten,rss,"{""prefilter"": true, ""keep"": 15}",0.6,commission,,,,,,,
+source,border-forensics,border-forensics,TRUE,https://www.borderforensics.org/feed/,rss,"{""require"": ""call|open call|bando|residen|fellowship|grant|award|prize|premio|concorso|competition|apply|candidat|vacanc|vacature|job|intern|stage|tirocin|opportunit|scholarship|avviso|borsa|position|hiring|recrut|offre""}",0.9,job,,,,,,,
+source,airwars,airwars,TRUE,https://airwars.org/feed,rss,"{""require"": ""job|vacanc|intern|hiring|position|fellow|recruit|we.re looking""}",0.9,job,,,,,,,
+source,starts,starts,TRUE,https://starts.eu/feed/,rss,"{""require"": ""call|open call|bando|residen|fellowship|grant|award|prize|premio|concorso|competition|apply|candidat|vacanc|vacature|job|intern|stage|tirocin|opportunit|scholarship|avviso|borsa|position|hiring|recrut|offre""}",0.9,open_call,,,,,,,
+source,triennale-jobs,triennale-jobs,TRUE,https://triennale.org/chi-siamo/jobs,html_list,"{""link_pattern"": ""https://triennale\\.org/chi-siamo/jobs/[^/?#]+""}",0.8,job,,,,,,,
+source,european-cultural-foundation,european-cultural-foundation,TRUE,https://culturalfoundation.eu/communities/open-calls/,html_list,"{""link_pattern"": ""https://culturalfoundation\\.eu/open-calls/[^/?#]+/""}",0.9,grant,,,,,,,
+source,adi-design,adi-design,TRUE,https://www.adi-design.org/homepage.html,html_list,"{""link_pattern"": ""https://www\\.adi-design\\.org/blog/[^/?#]+\\.html"", ""require"": ""call|open call|bando|residen|fellowship|grant|award|prize|premio|concorso|competition|apply|candidat|vacanc|vacature|job|intern|stage|tirocin|opportunit|scholarship|avviso|borsa|position|hiring|recrut|offre""}",0.7,competition,,,,,,,
+source,sandberg,sandberg,TRUE,https://sandberg.nl/,html_list,"{""link_pattern"": ""https://sandberg\\.nl/news/[^/?#]+"", ""require"": ""call|open call|bando|residen|fellowship|grant|award|prize|premio|concorso|competition|apply|candidat|vacanc|vacature|job|intern|stage|tirocin|opportunit|scholarship|avviso|borsa|position|hiring|recrut|offre""}",0.8,open_call,,,,,,,
+source,human-rights-watch,Human Rights Watch,TRUE,https://www.hrw.org/careers,ats,"{""system"": ""greenhouse"", ""board"": ""humanrightswatch"", ""org"": ""Human Rights Watch""}",0.9,job,,,,,,,
+source,occrp,OCCRP (Organized Crime and Corruption Reporting Project),TRUE,https://www.occrp.org/en/about-us/work-with-us,ats,"{""system"": ""bamboohr"", ""board"": ""occrp"", ""org"": ""OCCRP (Organized Crime and Corruption Reporting Project)""}",0.9,job,,,,,,,
+source,witness,WITNESS,TRUE,https://www.witness.org/careers/,ats,"{""system"": ""bamboohr"", ""board"": ""witness"", ""org"": ""WITNESS""}",1.0,job,,,,,,,
+source,access-now,Access Now,TRUE,https://www.accessnow.org/work-with-us/,ats,"{""system"": ""bamboohr"", ""board"": ""accessnow"", ""org"": ""Access Now""}",0.8,job,,,,,,,
+source,phmuseum,phmuseum,TRUE,https://phmuseum.com/grants,html_list,"{""urls"": [""https://phmuseum.com/grants"", ""https://phmuseum.com/awards""], ""link_pattern"": ""https://phmuseum\\.com/(grants|awards)/[^/?#]+"", ""max_items"": 15}",1.0,grant,,,,,,,
+source,bredaphoto,bredaphoto,TRUE,https://bredaphoto.nl/,html_list,"{""link_pattern"": ""https://bredaphoto\\.nl/news/[^/?#]+/"", ""require"": ""open call|award|prize|grant|talent|call for|submission|premio|bando|residen|fellowship|apply""}",0.9,open_call,,,,,,,
+source,bno-vacatures,bno-vacatures,TRUE,https://www.bno.nl/blog/vacatures-25,html_list,"{""link_pattern"": ""https://www\\.bno\\.nl/blog/vacatures-\\d+/[^/?#]+""}",0.9,job,,,,,,,
+source,atelier-brueckner,atelier-brueckner,TRUE,https://www.atelier-brueckner.com/de/jobs,html_list,"{""link_pattern"": ""https://www\\.atelier-brueckner\\.com/de/jobs/[^/?#]+""}",0.9,job,,,,,,,
+source,accurat,accurat,TRUE,https://www.accurat.it/jobs,html_list,"{""link_pattern"": ""https://www\\.accurat\\.it/jobs/[^/?#]+""}",1.0,job,,,,,,,
+source,cleverfranke,cleverfranke,TRUE,https://www.cleverfranke.com/careers,html_list,"{""link_pattern"": ""https://jobs\\.cleverfranke\\.com/[^/?#]+""}",1.0,job,,,,,,,
+source,open-visualization-academy,open-visualization-academy,TRUE,https://openvisualizationacademy.org/,html_list,"{""link_pattern"": ""https://openvisualizationacademy\\.org/courses/[^/?#]+/?""}",0.6,workshop,,,,,,,
+source,transartists,transartists,TRUE,https://www.transartists.org/en/transartists-calls,html_list,"{""urls"": [""https://www.transartists.org/en/transartists-calls"", ""https://www.transartists.org/en""], ""link_pattern"": ""https://www\\.transartists\\.org/en/news/[^/?#]+"", ""max_items"": 25}",1.0,open_call,,,,,,,
+source,afield,afield,TRUE,https://afield.org/feed/,rss,"{""require"": ""open call|call for|fellowship|apply|application|deadline|residen|grant|award|prize|opportunit""}",1.0,fellowship,,,,,,,
+source,fontanel,fontanel,TRUE,https://www.fontaneljobs.com/,html_list,"{""link_pattern"": ""https://www\\.fontaneljobs\\.com/jobs/[^/?#]+"", ""prefilter"": true, ""keep"": 25}",0.9,job,,,,,,,
+source,magnet-me,magnet-me,TRUE,https://magnet.me/en/jobs/netherlands/design,html_list,"{""urls"": [""https://magnet.me/en/jobs/netherlands/design"", ""https://magnet.me/en/internships/netherlands/design"", ""https://magnet.me/en/jobs/netherlands/marketing-communication""], ""link_pattern"": ""https://magnet\\.me/en/opportunity/\\d+/[^/?#]+"", ""prefilter"": true, ""keep"": 20}",0.9,job,,,,,,,
+source,uiuxjobsboard,uiuxjobsboard,TRUE,https://uiuxjobsboard.com/design-jobs/netherlands,html_list,"{""urls"": [""https://uiuxjobsboard.com/design-jobs/netherlands"", ""https://uiuxjobsboard.com/design-jobs/italy"", ""https://uiuxjobsboard.com/design-jobs/belgium"", ""https://uiuxjobsboard.com/design-jobs/germany"", ""https://uiuxjobsboard.com/design-jobs/spain"", ""https://uiuxjobsboard.com/design-jobs/portugal"", ""https://uiuxjobsboard.com/design-jobs/france"", ""https://uiuxjobsboard.com/design-jobs/remote""], ""link_pattern"": ""https://uiuxjobsboard\\.com/job/\\d+-[^/?#]+"", ""prefilter"": true, ""keep"": 20}",0.8,job,,,,,,,
+source,kunstenbond,kunstenbond,TRUE,https://www.kunstenbond.nl/vacatures/,html_list,"{""link_pattern"": ""https://kunstenbond\\.nl/vacature-[^/?#]+/""}",0.8,job,,,,,,,
+source,dribbble,dribbble,TRUE,https://dribbble.com/jobs.rss,rss,"{""prefilter"": true, ""keep"": 15}",0.6,job,,,,,,,
+source,ifyoucould,ifyoucould,TRUE,https://www.ifyoucouldjobs.com/,html_list,"{""link_pattern"": ""https://www\\.ifyoucouldjobs\\.com/jobs/\\d+"", ""prefilter"": true, ""keep"": 20}",0.8,job,,,,,,,
+source,creative-lives-in-progress,creative-lives-in-progress,TRUE,https://creativelivesinprogress.com/opportunities,html_list,"{""link_pattern"": ""https://creativelivesinprogress\\.com/opportunities/[^/?#]+"", ""prefilter"": true, ""keep"": 15}",0.8,job,,,,,,,
+source,weworkremotely,weworkremotely,TRUE,https://weworkremotely.com/categories/remote-design-jobs.rss,rss,"{""prefilter"": true, ""keep"": 10}",0.5,job,,,,,,,
+source,lascuolaopensource,lascuolaopensource,TRUE,https://www.lascuolaopensource.xyz/it/attivita,html_list,"{""link_pattern"": ""https://www\\.lascuolaopensource\\.xyz/it/attivita/[a-z0-9-]+/?""}",1.0,workshop,,,,,,,
+source,baltan,baltan,TRUE,https://www.baltanlaboratories.org/,html_list,"{""link_pattern"": ""https://www\\.baltanlaboratories\\.org/(events/workshop[a-z0-9-]*|library/[a-z0-9-]*(open-call|call-for|vacanc|intern|residenc|fellowship|summer-camp)[a-z0-9-]*)"", ""max_items"": 20}",1.0,open_call,,,,,,,
+source,reliefweb,reliefweb,TRUE,https://reliefweb.int/jobs/rss.xml,rss,"{""title_filter"": true, ""full_text_in_feed"": true, ""query_param"": ""search"", ""queries"": [""graphic design"", ""visual communication"", ""multimedia"", ""photographer"", ""data visualization"", ""information design"", ""GIS mapping"", ""cartography"", ""exhibition"", ""publication design"", ""communication officer junior""], ""prefilter"": true, ""keep"": 30}",0.8,job,,,,,,,
+source,un-careers,un-careers,TRUE,https://careers.un.org/jobopening?language=en,un_careers,"{""title_filter"": true, ""queries"": [""graphic"", ""design"", ""visual"", ""multimedia"", ""photograph*"", ""communication"", ""information management"", ""geospatial"", ""publication"", ""exhibition"", ""data visualization""], ""per_query"": 25, ""prefilter"": true, ""keep"": 25}",0.8,job,,,,,,,
+source,unesco,unesco,TRUE,https://careers.unesco.org/go/All-jobs-openings/782502/,html_list,"{""title_filter"": true, ""link_pattern"": ""https://careers\\.unesco\\.org/job/[^?#]+/\\d+/"", ""max_items"": 60, ""prefilter"": true, ""keep"": 15}",0.7,job,,,,,,,
+source,who,World Health Organization (WHO),TRUE,https://careers.who.int/careersection/ex/jobsearch.ftl?lang=en,taleo,"{""title_filter"": true, ""base"": ""https://careers.who.int"", ""section"": ""ex"", ""org"": ""World Health Organization (WHO)"", ""pages"": 3, ""prefilter"": true, ""keep"": 15}",0.7,job,,,,,,,
+source,fao,Food and Agriculture Organization (FAO),TRUE,https://jobs.fao.org/careersection/fao_external/jobsearch.ftl?lang=en,taleo,"{""title_filter"": true, ""base"": ""https://jobs.fao.org"", ""section"": ""fao_external"", ""org"": ""Food and Agriculture Organization (FAO)"", ""pages"": 3, ""prefilter"": true, ""keep"": 15}",0.7,job,,,,,,,
+source,jobspy,jobspy,TRUE,https://www.indeed.com/worldwide,jobspy,"{""keep"": 40}",0.6,job,,,,,,,
+watch,,Waag Futurelab,TRUE,https://waag.org/en/vacancies/,watch,,,,"participat*, civic tech",,,,,,
+watch,,Het Nieuwe Instituut (open calls),TRUE,https://nieuweinstituut.nl/en/projects/over-ons/open-calls,watch,,,,"research, fellowship, open call",,,,,,
+watch,,Het Nieuwe Instituut (vacancies),TRUE,https://nieuweinstituut.nl/en/projects/over-ons/vacatures,watch,,,,"job, research",,,,,,
+watch,,Jan van Eyck Academie,TRUE,https://www.janvaneyck.nl/apply,watch,,,,"residency, research",,,,,,
+watch,,Fabrica (residency),TRUE,https://www.fabrica.it/en/residency/,watch,,,,"residency, design",,,,,,
+watch,,Bellingcat (careers),TRUE,https://www.bellingcat.com/about/careers,watch,,,,"investigative, job",,,,,,
+watch,,Bellingcat (workshops),TRUE,https://www.bellingcat.com/workshops/,watch,,,,"investigative, workshop",,,,,,
+watch,,Lighthouse Reports,TRUE,https://www.lighthousereports.com/jobs/,watch,,,,investigative,,,,,,
+watch,,Italian Council (MiC),TRUE,https://creativitacontemporanea.cultura.gov.it/,watch,,,,"grant, italy",,,,,,
+watch,,La Scuola Open Source (proponi),TRUE,https://www.lascuolaopensource.xyz/it/proponi,watch,,,,"workshop, open call, participat*",,,,,,
+watch,,Journalismfund Europe (grants),TRUE,https://www.journalismfund.eu/grants,watch,,,,"journalism, grant",,,,,,
+watch,,ProPublica (fellowships),TRUE,https://www.propublica.org/fellowships,watch,,,,"journalism, fellowship",,,,,,
+watch,,SITU (opportunities),TRUE,https://situ.nyc/opportunities,watch,,,,"investigative, spatial, job",,,,,,
+watch,,Ars Electronica (open calls),TRUE,https://ars.electronica.art/news/en/opencalls/,watch,,,,"art science, open call",,,,,,
+watch,,Ars Electronica (Prix),TRUE,https://ars.electronica.art/prix/en/,watch,,,,competition,,,,,,
+watch,,Ars Electronica (careers),TRUE,https://ars.electronica.art/about/en/careers/,watch,,,,job,,,,,,
+watch,,Akademie Schloss Solitude (fellowship),TRUE,https://www.akademie-solitude.de/en/fellowship/application/,watch,,,,"fellowship, residency",,,,,,
+watch,,Akademie Schloss Solitude (jobs),TRUE,https://www.akademie-solitude.de/en/academy/jobs/,watch,,,,job,,,,,,
+watch,,Cittadellarte (UNIDEE residencies),TRUE,https://unidee.cittadellarte.it/,watch,,,,"residency, participatory",,,,,,
+watch,,MAXXI (open calls),TRUE,https://www.maxxi.art/events/categories/open-call/,watch,,,,"open call, italy",,,,,,
+watch,,MAXXI (internships),TRUE,https://www.maxxi.art/tirocini/,watch,,,,"internship, italy",,,,,,
+watch,,GAI Giovani Artisti Italiani,TRUE,https://www.giovaniartisti.it/,watch,,,,"italy, photography, grant",,,,,,
+watch,,Prince Claus Fund (awards),TRUE,https://princeclausfund.nl/awards-and-programmes,watch,,,,"grant, award",,,,,,
+watch,,Malofiej (news infographics awards),TRUE,https://www.malofiejgraphics.com/,watch,,,,"competition, journalism",,,,,,
+watch,,Information+ conference,TRUE,https://informationplusconference.com/,watch,,,,"information design, call for submissions",,,,,,
+watch,,D&AD New Blood,TRUE,https://www.dandad.org/awards/new-blood-awards,watch,,,,competition,,,,,,
+watch,,DensityDesign (opportunities),TRUE,https://densitydesign.org/opportunities/,watch,,,,"research, information design, italy",,,,,,
+watch,,Design Academy Eindhoven (Community Grant),TRUE,https://www.designacademy.nl/page/6107/dae-community-grant,watch,,,,"grant, alumni",,,,,,
+watch,,Design Academy Eindhoven (Residency Guide),TRUE,https://www.designacademy.nl/page/9951/residency-guide,watch,,,,"residency, alumni",,,,,,
+watch,,Puglia Creativa (opportunità),TRUE,https://www.pugliacreativa.it/opportunita-distretto/,watch,,,,"puglia, italy",,,,,,
+watch,,"unibz (PhD Design, Art and Technologies)",TRUE,https://www.unibz.it/en/faculties/design-art/phd-experimental-research-design-art-technologies,watch,,,,"phd, research, design",,,,,,
+watch,,unibz (incarichi e albi collaboratori),TRUE,https://www.unibz.it/it/home/assignments,watch,,,,"freelance, teaching, italy",,,,,,
+watch,,Thonik (vacancies),TRUE,https://thonik.nl/vacancies,watch,,,,"studio, NL",,,,,,
+watch,,Studio Dumbar (jobs),TRUE,https://studiodumbar.com/jobs,watch,,,,"studio, NL",,,,,,
+watch,,Studio Mut (internships),TRUE,https://www.studiomut.com/internship,watch,,,,"studio, internship, Bolzano",,,,,,
+watch,,Base Design (jobs),TRUE,https://www.basedesign.com/jobs,watch,,,,"studio, BE",,,,,,
+watch,,Bureau Borsche (jobs and internships),TRUE,https://bureauborsche.com/info/jobs-and-internships,watch,,,,"studio, DE",,,,,,
+watch,,Kellenberger-White (careers),TRUE,https://kellenberger-white.com/careers/,watch,,,,"studio, UK",,,,,,
+watch,,Pentagram (careers),TRUE,https://www.pentagram.com/careers,watch,,,,studio,,,,,,
+watch,,AIAP (job service),TRUE,https://aiap.it/job-service/,watch,,,,"board, italy",,,,,,
+watch,,Cortona On The Move (portfolio reviews),TRUE,https://www.cortonaonthemove.com/letture-portfolio/,watch,,,,"photography, italy",,,,,,
+watch,,Cortona On The Move (Premio Vittoria Castagna),TRUE,https://www.cortonaonthemove.com/premio-vittoria-castagna/,watch,,,,"photography, prize, italy",,,,,,
+watch,,PhEST Monopoli,TRUE,https://www.phest.info/,watch,,,,"photography, puglia, open call",,,,,,
+watch,,Fotografia Europea,TRUE,https://www.fotografiaeuropea.it/,watch,,,,"photography, open call, italy",,,,,,
+watch,,Photolux,TRUE,https://www.photoluxfestival.it/,watch,,,,"photography, award, italy",,,,,,
+watch,,SI Fest Savignano,TRUE,https://www.sifest.it/,watch,,,,"photography, italy",,,,,,
+watch,,Festival della Fotografia Etica,TRUE,https://www.festivaldellafotografiaetica.it/,watch,,,,"photography, award, italy",,,,,,
+watch,,CAMERA Torino,TRUE,https://camera.to/,watch,,,,"photography, italy",,,,,,
+watch,,BredaPhoto (talent programme),TRUE,https://bredaphoto.nl/international-talent-programme/,watch,,,,"photography, talent, NL",,,,,,
+watch,,Images Vevey,TRUE,https://www.images.ch/,watch,,,,"photography, award, CH",,,,,,
+watch,,Fotofestiwal Lodz,TRUE,https://fotofestiwal.com/,watch,,,,"photography, open call",,,,,,
+watch,,World Press Photo,TRUE,https://www.worldpressphoto.org/,watch,,,,"photojournalism, contest",,,,,,
+watch,,Magnum Foundation (opportunities),TRUE,https://www.magnumfoundation.org/opportunities,watch,,,,"photography, grant",,,,,,
+watch,,Kassel Dummy Award,TRUE,https://fotobookfestival.org/kassel-dummy-award/,watch,,,,"photobook, award",,,,,,
+watch,,Global Witness (careers),TRUE,https://globalwitness.org/en/careers/,watch,,,,"human rights, investigative",,,,,,
+watch,,ICIJ (work with us),TRUE,https://www.icij.org/about/work-with-us/,watch,,,,"investigative, journalism",,,,,,
+watch,,Forbidden Stories (jobs),TRUE,https://forbiddenstories.org/about-us/organization/job-opportunities/,watch,,,,"investigative, journalism",,,,,,
+watch,,Tactical Tech (jobs),TRUE,https://tacticaltech.org/jobs/,watch,,,,"digital rights, visual investigation",,,,,,
+watch,,Privacy International (opportunities),TRUE,https://privacyinternational.org/about/opportunities,watch,,,,digital rights,,,,,,
+watch,,EDRi (jobs),TRUE,https://edri.org/take-action/careers/,watch,,,,"digital rights, EU",,,,,,
+watch,,Statewatch (work with us),TRUE,https://statewatch.org/work-with-us/,watch,,,,"civil liberties, research",,,,,,
+watch,,Transparency International (careers),TRUE,https://www.transparency.org/en/career-tender-opportunities,watch,,,,anti-corruption,,,,,,
+watch,,Oxfam International (jobs),TRUE,https://www.oxfam.org/en/take-action/jobs,watch,,,,NGO,,,,,,
+watch,,MSF (work with MSF),TRUE,https://www.msf.org/work-msf,watch,,,,"NGO, humanitarian",,,,,,
+watch,,Sea-Watch (jobs),TRUE,https://sea-watch.org/mitmachen/,watch,,,,"migration, human rights",,,,,,
+watch,,Amnesty International NL (vacatures),TRUE,https://www.amnesty.nl/werken-bij-amnesty/vacatures,watch,,,,"human rights, NL",,,,,,
+watch,,Bits of Freedom (vacatures),TRUE,https://www.bitsoffreedom.nl/kom-bij-ons-werken/,watch,,,,"digital rights, NL",,,,,,
+watch,,Oxfam Novib (vacatures en stages),TRUE,https://www.oxfamnovib.nl/vacatures,watch,,,,"NGO, internship, NL",,,,,,
+watch,,Amnesty International Italia (lavora con noi),TRUE,https://www.amnesty.it/chi-siamo/lavora-con-noi/,watch,,,,"human rights, italy",,,,,,
+watch,,Emergency (lavora con noi),TRUE,https://www.emergency.it/lavora-con-noi/,watch,,,,"NGO, italy",,,,,,
+watch,,ActionAid Italia (lavora con noi),TRUE,https://www.actionaid.it/chi-siamo/lavora-con-noi/,watch,,,,"NGO, italy",,,,,,
+watch,,CIVICUS (resourcing opportunities),TRUE,https://www.civicus.org/index.php/engage-and-act/explore-resourcing-opportunities,watch,,,,"civil society, grant",,,,,,
+studio,,Studio Joost Grootens,,https://www.joostgrootens.nl/,,,,,,Amsterdam,NL,"information design, editorial",,,
+studio,,Irma Boom Office,,https://www.irmaboom.nl/,,,,,,Amsterdam,NL,"editorial, books",Irma Boom is an Amsterdam-based graphic designer specialised in making books.,,
+studio,,Metahaven,,https://metahaven.net/,,,,,,Amsterdam,NL,"critical, research",,,
+studio,,Thonik,,https://thonik.nl/,,,,,,Amsterdam,NL,"cultural, political","From politics to culture to business, Dutch studio thonik strikes a balance between adventurous concepts and pragmatic resolutions.",https://thonik.nl/vacancies,
+studio,,Studio Dumbar,,https://studiodumbar.com/,,,,,,Rotterdam,NL,identity,"Studio Dumbar/DEPT® creates bespoke identities, specialising in visual design, motion design, sound and creative coding.",https://studiodumbar.com/jobs,
+studio,,Mainstudio,,https://mainstudio.com/,,,,,,Amsterdam,NL,"cultural, editorial",,,
+studio,,Raw Color,,https://www.rawcolor.nl/welcome/,,,,,,Eindhoven,NL,"cultural, spatial",,,
+studio,,Studio Spass,,https://studiospass.com/,,,,,,Rotterdam,NL,"cultural, spatial","Design studio for installations, identities and campaigns.",,
+studio,,Studio Moniker,,https://studiomoniker.com/,,,,,,Amsterdam,NL,"interactive, critical",Moniker 2012–2023 – An Amsterdam based studio by Luna Maurer & Roel Wouters,,
+studio,,Trapped in Suburbia,,https://www.trappedinsuburbia.com/,,,,,,The Hague,NL,"participatory, interactive","Trapped in Suburbia is a studio for exhibition and experience design, transforming spaces into immersive, multisensory environments for museums, installations and cultural or commercial projects.",,
+studio,,The Rodina,,https://www.therodina.com/,,,,,,Amsterdam,NL,"critical, interactive","Explore projects by The Rodina, a post-critical design studio.",,
+studio,,Kossmanndejong,,https://kossmanndejong.nl/,,,,,,Amsterdam,NL,exhibition,"We are an experienced and ambitious design studio specialized in creating captivating story-driven spatial experiences. We are a purpose-driven team, committed to telling urgent and relevant stories—whether historical, s",,
+studio,,Studio Frank Bruggeman,,https://www.frankbruggeman.nl/,,,,,,Amsterdam,NL,"cultural, spatial",,,
+studio,,The Visual Agency,,https://thevisualagency.com/,,,,,,Milan,IT,information design,(its site blocks automated reading: open it in your browser),,
+studio,,Leftloft,,https://www.leftloft.com/,,,,,,Milan,IT,"identity, type, cultural",Leftloft is an independent creative studio based in Milan working on commercial and cultural projects from beginning to end.,,
+studio,,Studio FM Milano,,https://studiofmmilano.com/,,,,,,Milan,IT,"cultural, editorial, exhibition","Brand identity, art direction, digital, editorial, wayfinding, exhibition design",,
+studio,,Zaven,,https://www.zaven.net/,,,,,,Venice,IT,"cultural, exhibition","Zaven is a multidisciplinary design studio founded by Enrica Cavarzan and Marco Zavagno, working across product, graphic and interior design.",,
+studio,,Studio Mut,,https://www.studiomut.com/,,,,,,Bolzano,IT,"cultural, editorial","Studio Mut is a premier graphic design studio specialising in visual identity, digital product design, and visual direction, based in Bolzano (Südtirol, Italy). Led by Thomas Kronbichler, Martin Kerschbaumer, and Anni Se",https://www.studiomut.com/internship,
+studio,,Lupo & Burtscher,,https://www.lupoburtscher.it/,,,,,,Bolzano,IT,"cultural, exhibition",,,
+studio,,Dinamo Milano,,https://www.dinamomilano.com/,,,,,,Milan,IT,"cultural, exhibition",,,
+studio,,Leonardo Sonnoli / Tassinari Vetta,,https://www.tassinarivetta.it/,,,,,,Trieste,IT,"cultural, type","Tassinari/Vetta is one of the best-established design offices in Italy, with a focus on visual identity, editorial and environmental design for cultural institutions and events, as well as major commercial clients.",,
+studio,,Tomo Tomo,,https://www.tomotomo.it/,,,,,,Bologna,IT,"cultural, editorial",Graphic Design,,
+studio,,OSP Open Source Publishing,,https://osp.kitchen/,,,,,,Brussels,BE,"critical, open source, editorial",,,
+studio,,Base Design,,https://www.basedesign.com/,,,,,,Brussels,BE,"identity, cultural","We design ingeniously simple brands and build unique personalities. We humanize corporations, launch visions and clarify the complex.",https://www.basedesign.com/jobs,
+studio,,Bureau Borsche,,https://www.bureauborsche.com/,,,,,,Munich,DE,"cultural, editorial",,https://bureauborsche.com/info/jobs-and-internships,
+studio,,HORT,,https://www.hort.org.uk/,,,,,,Berlin,DE,cultural,Hort Hagelberger Str.52(Hh) 10965 Berlin +49(0)30-81828108 contact@hort.org.uk,,
+studio,,Studio Yukiko,,https://www.studio-yukiko.com/,,,,,,Berlin,DE,"editorial, cultural",(its site blocks automated reading: open it in your browser),,
+studio,,NODE Berlin Oslo,,https://node.international/,,,,,,Berlin,DE,"cultural, editorial, exhibition",NODE is a Berlin and Oslo based design studio.,,
+studio,,Atelier Brückner,,https://www.atelier-brueckner.com/de,,,,,,Stuttgart,DE,exhibition,ATELIER BRÜCKNER,https://www.atelier-brueckner.com/de/jobs,
+studio,,Ralph Appelbaum Associates,,https://raai.com/,,,,,,London/Berlin,UK,exhibition,,,
+studio,,Spin,,https://spin.co.uk/,,,,,,London,UK,"identity, type","Our vision is to create bespoke visual responses across myriad platforms, a seamless integration of digital and physical outputs. Our process, collaborative and inclusive, has been shaped in response to the increasingly ",,
+studio,,Kellenberger-White,,https://kellenberger-white.com/,,,,,,London,UK,"cultural, type",Kellenberger–White is an award-winning graphic design studio based in London.,https://kellenberger-white.com/careers/,
+studio,,Pentagram,,https://www.pentagram.com/,,,,,,London,UK,"identity, information design","Pentagram is the world’s largest independent design consultancy. The firm is owned and run by 24 partners, each of whom are leaders in their individual fields.",https://www.pentagram.com/careers,
+studio,,Vier5,,https://www.vier5.de/,,,,,,Paris,FR,"cultural, type","VIER5. VIER5 is dealing with the development of new and modern visual languages and their applicability. Belonging to it are all areas of visual communication, like for example graphic design, photography and film but al",,
+studio,,Folch,,https://www.folchstudio.com/,,,,,,Barcelona,ES,"editorial, identity","Multidisciplinary communication agency a decade working with brands to crystalize their ideas. Developing relevant brands, concepts and communication.",,
+studio,,Mucho,,https://wearemucho.com/,,,,,,Barcelona,ES,"identity, cultural",We're a globally recognized design agency crafting brands with a strategy to impact the future. Explore our portfolio for inspiring branding.,,
+studio,,Hansje van Halem,,https://www.hansje.net/,,,,,,Amsterdam,NL,"type, cultural",,,
+studio,,EDHV,,https://www.edhv.nl/,,,,,,Eindhoven,NL,"identity, interactive","We are Edhv, Architects of Identity, a strategy and design studio based in Eindhoven. We create identities that are authentic, meaningful, and built to last.",,
+studio,,La Tigre,,https://www.latigre.net/,,,,,,Milan,IT,"cultural, editorial",(its site blocks automated reading: open it in your browser),,
+studio,,Zak Group,,https://www.zak.group/,,,,,,London,UK,"cultural, editorial",Zak Group Website,,
+studio,,A Practice for Everyday Life,,https://apracticeforeverydaylife.com/,,,,,,London,UK,"cultural, exhibition","Creative direction, design and type for culture since 2003.",,
+studio,,Ludovic Balland,,https://www.ludovic-balland.com/,,,,,,Basel,CH,"editorial, type",Ludovic Balland is a Swiss-based graphic and book designer. He founded his typography cabinet in 2006.,,
+studio,,Norm,,https://norm.to/,,,,,,Zurich,CH,"type, editorial",NORM was founded in 1999 by Dimitri Bruni (1970) and Manuel Krebs (1970). Ludovic Varone (1977) joined the studio in 2005. NORM is designing and publishing books and typefaces.,,
+studio,,Maximage,,https://maximage.biz/,,,,,,Geneva,CH,"cultural, type",,,
+studio,,Studio Feixen,,https://www.studiofeixen.ch/,,,,,,Lucerne,CH,"cultural, identity","Studio Feixen is a Swiss multidisciplinary design studio working across various fields, including graphic design, type design, animation, product design, and spatial design.",,
+studio,,Hey Studio,,https://heystudio.es/,,,,,,Barcelona,ES,"identity, editorial",Hey is a Barcelona-based creative studio founded in 2007. We specialize in developing creative strategies and visual languages for clients around the world 🌍. Our collaborative approach and passionate team enable us to c,,
+studio,,R2 design,,https://www.r2design.pt/,,,,,,Porto,PT,"cultural, exhibition","R2 is an award-winning studio specialised in graphic identity, editorial and environmental design, with a strong focus on theatre, contemporary art and architecture. Created by Lizá Defossez Ramalho (Troyes, France) and ",,
+studio,,Atelier Müesli,,https://ateliermuesli.com/,,,,,,Paris,FR,"cultural, editorial",Agence de design graphique fondée en 2008 par Mytil Ducomet et Léa Chapon,,
+studio,,Helmo,,https://helmo.fr/,,,,,,Paris,FR,cultural,Atelier de graphisme,,
+studio,,Formes Vives,,https://www.formes-vives.org/,,,,,,Brittany,FR,"critical, social, political","Nicolas Filloque, Adrien Zammit & Geoffroy Pithon — Communication politique, création graphique, pédagogie, édition et dessin",,
+studio,,Bureau d'Etudes,,https://bureaudetudes.org/,,,,,,France,FR,"critical, maps, research","Cartography of political, industrial, research, social, power networks.",,
+studio,,Kollektiv Orangotango,,https://orangotango.info/,,,,,,Berlin,DE,"counter-mapping, participatory, critical",Collective for popular education and creative protest,,
+studio,,Spector Books,,https://www.spectorbooks.com/,,,,,,Leipzig,DE,"editorial, books","Spector’s publishing practice is settled squarely in the intersection of art, theory, and design. Based in Leipzig Germany, our publishing house explores the possibilities offered by an active exchange between all partie",,
+excluded,,TransArtists (other open calls),FALSE,https://www.transartists.org/en/other-open-calls,,,,,,,,,,,403 to automated requests; its own calls page is read instead
+excluded,,GIJN jobs,FALSE,https://gijn.org/jobs/,,,,,,,,,,,403
+excluded,,Dezeen Jobs,FALSE,https://www.dezeenjobs.com/feed/,,,,,,,,,,,RSS answers 403
+excluded,,Mostrami,FALSE,https://www.mostra-mi.it/news/bandi,,,,,,,,,,,no usable feed
+excluded,,LinkedIn,FALSE,https://www.linkedin.com/jobs/,,,,,,,,,,,excluded by your decision (terms of service)
+excluded,,Picter,FALSE,https://submit.picter.com/,,,,,,,,,,,"bot protection (Vercel checkpoint, 429): add calls with the bookmarklet"
+excluded,,Behance Jobs,FALSE,https://www.behance.net/joblist,,,,,,,,,,,403
+excluded,,Creativepool,FALSE,https://creativepool.com/jobs/,,,,,,,,,,,403
+excluded,,Coroflot,FALSE,https://www.coroflot.com/design-jobs,,,,,,,,,,,403
+excluded,,Working Not Working,FALSE,https://workingnotworking.com/jobs,,,,,,,,,,,403
+excluded,,It's Nice That jobs,FALSE,https://www.itsnicethat.com/jobs,,,,,,,,,,,page gone (404)
+excluded,,InfoJobs Italia,FALSE,https://www.infojobs.it/,,,,,,,,,,,JavaScript-only
+excluded,,Werken voor Nederland,FALSE,https://www.werkenvoornederland.nl/vacatures,,,,,,,,,,,JavaScript-only
+excluded,,UNjobs.org,FALSE,https://unjobs.org/,,,,,,,,,,,robots.txt disallows
+excluded,,UNDP jobs,FALSE,https://jobs.undp.org/,,,,,,,,,,,robots.txt disallows
+excluded,,UNESCO RSS,FALSE,https://careers.unesco.org/services/rss/,,,,,,,,,,,robots.txt disallows (listing page read instead)
+excluded,,Devex jobs,FALSE,https://www.devex.com/jobs/search,,,,,,,,,,,403
+excluded,,Varrgo,FALSE,https://varrgo.com/,,,,,,,,,,,JavaScript-only
+excluded,,Metabolic vacancies,FALSE,https://www.metabolic.nl/about/,,,,,,,,,,,list loaded by a script; projects used as references
+excluded,,unibz positions,FALSE,https://www.unibz.it/en/home/position-calls,,,,,,,,,,,JavaScript search behind bot protection; EURAXESS covers unibz research posts
+excluded,,Forensis,FALSE,https://forensis.org/,,,,,,,,,,,domain now redirects to an unrelated site
+excluded,,Earshot,FALSE,https://earshot.ngo/,,,,,,,,,,,JavaScript-only
+excluded,,V2_,FALSE,https://v2.nl/,,,,,,,,,,,"JavaScript-only, RSS malformed"
+excluded,,Goldsmiths Centre for Research Architecture,FALSE,https://www.gold.ac.uk/research-architecture/,,,,,,,,,,,page gone (404)
+excluded,,Culture Moves Europe (goethe.de),FALSE,https://www.goethe.de/ins/be/en/kul/foe/cme.html,,,,,,,,,,,403
+excluded,,ADC Young Ones / One Club,FALSE,https://www.oneclub.org/,,,,,,,,,,,robots.txt disallows
+excluded,,IUAV,FALSE,https://www.iuav.it/,,,,,,,,,,,JavaScript-only
+excluded,,ISIA Urbino,FALSE,https://www.isiaurbino.net/,,,,,,,,,,,invalid SSL certificate
+excluded,,Regione Puglia PIN,FALSE,https://pin.regione.puglia.it/,,,,,,,,,,,domain does not resolve
+excluded,,Teatro Pubblico Pugliese,FALSE,https://www.teatropubblicopugliese.it/,,,,,,,,,,,JavaScript-only
+excluded,,The Pudding,FALSE,https://pudding.cool/,,,,,,,,,,,no calls page
+excluded,,dasauge,FALSE,https://dasauge.de/jobs/,,,,,,,,,,,"lists job categories, not postings (Indeed covers Germany)"
+excluded,,Yeast Photo Festival,FALSE,https://www.yeastphotofestival.it/,,,,,,,,,,,JavaScript-only
+excluded,,Unseen Amsterdam,FALSE,https://unseenphoto.com/,,,,,,,,,,,JavaScript-only
+excluded,,Foam (Foam Talent),FALSE,https://www.foam.org/,,,,,,,,,,,bot protection (Vercel checkpoint)
+excluded,,Aperture,FALSE,https://aperture.org/,,,,,,,,,,,403 (bot protection)
+excluded,,Gazebook,FALSE,https://www.gazebook.it/,,,,,,,,,,,403
+excluded,,Les Rencontres d'Arles,FALSE,https://www.rencontres-arles.com/,,,,,,,,,,,browser check (bot protection)
+excluded,,FOMU Antwerp,FALSE,https://www.fomu.atomuseum.be/,,,,,,,,,,,unreachable
+excluded,,Amnesty International,FALSE,https://www.amnesty.org/en/careers/,,,,,,,,,,,403 (national sections NL and Italy are watched)
+excluded,,Human Rights Watch website,FALSE,https://www.hrw.org/,,,,,,,,,,,403 (its jobs are read through Greenhouse instead)
+excluded,,Article 19,FALSE,https://www.article19.org/,,,,,,,,,,,403
+excluded,,Free Press Unlimited,FALSE,https://www.freepressunlimited.org/,,,,,,,,,,,403
+excluded,,Mnemonic,FALSE,https://mnemonic.org/,,,,,,,,,,,JavaScript-only
+excluded,,Mevis & Van Deursen,FALSE,https://www.mevisvandeursen.nl/,,,,,,,,,,,domain is now a casino site
+excluded,,Tankboys,FALSE,https://www.tankboys.biz/,,,,,,,,,,,domain is now a game site
+excluded,,Studio Andrew Howard,FALSE,https://www.andrewhoward.net/,,,,,,,,,,,domain expired
+excluded,,Experimental Jetset,FALSE,https://www.experimentaljetset.nl/,,,,,,,,,,,unreachable at this address: send the current link
+excluded,,Haller Brun,FALSE,https://www.hallerbrun.com/,,,,,,,,,,,unreachable at this address
+excluded,,Our Polite Society,FALSE,https://www.ourpolitesociety.com/,,,,,,,,,,,unreachable at this address
+excluded,,Calibro,FALSE,https://calibro.pt/,,,,,,,,,,,unreachable at this address
+excluded,,Brave New Alps,FALSE,https://www.bravenewalps.com/,,,,,,,,,,,unreachable at this address
+excluded,,Building Paris,FALSE,https://www.building-paris.fr/,,,,,,,,,,,unreachable at this address
+excluded,,Change is good,FALSE,https://www.changeisgood.fr/,,,,,,,,,,,unreachable at this address
+excluded,,Barbara Says,FALSE,https://www.barbara-says.com/,,,,,,,,,,,unreachable at this address
+excluded,,Vandejong,FALSE,https://www.vandejong.nl/,,,,,,,,,,,unreachable at this address
+excluded,,Studio Laucke Siebein,FALSE,https://www.laucke-siebein.com/,,,,,,,,,,,unreachable at this address
+excluded,,Kummer & Herrman,FALSE,https://www.kummerherrman.nl/,,,,,,,,,,,unreachable at this address
+excluded,,Studio Fludd,FALSE,https://www.studiofludd.it/,,,,,,,,,,,unreachable at this address
+excluded,,Parco Studio,FALSE,https://www.parcostudio.it/,,,,,,,,,,,unreachable at this address
+excluded,,46xy (Mario Piazza),FALSE,https://www.46xy.it/,,,,,,,,,,,unreachable at this address

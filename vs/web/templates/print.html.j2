@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ title }}</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  :root { --ink: #111726; --muted: #6b6a69; --line: #d9d7d2; }
+  body { font-family: "Helvetica Neue", Arial, sans-serif; color: var(--ink); font-size: 10.5pt; line-height: 1.45; }
+  h1 { font-size: 20pt; font-weight: 500; margin: 0 0 6pt; letter-spacing: -0.01em; }
+  h2 { font-size: 12pt; font-weight: 600; margin: 18pt 0 6pt; padding-top: 6pt; border-top: 1px solid var(--line); }
+  table { border-collapse: collapse; width: 100%; margin: 8pt 0; }
+  td, th { text-align: left; vertical-align: top; padding: 3pt 8pt 3pt 0; border-bottom: 1px solid var(--line); }
+  th:empty { display: none; }
+  blockquote { margin: 8pt 0; padding: 6pt 10pt; background: #f4f2ec; border: 0; }
+  a { color: inherit; }
+  code, pre { font-size: 9pt; background: #f4f2ec; }
+  pre { padding: 6pt; white-space: pre-wrap; }
+  li { margin: 2pt 0; }
+</style>
+</head>
+<body>
+{{ body }}
+</body>
+</html>

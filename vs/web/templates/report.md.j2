@@ -1,0 +1,53 @@
+# Opportunities report · {{ when }}
+
+{{ counts.new }} new · {{ counts.updated }} updated · {{ counts.duplicate }} duplicates merged · {{ counts.expired }} expired · {{ counts.failed }} failed
+{% if broken %}
+
+## Sources that need attention
+
+{% for sid, s in broken.items() -%}
+- **{{ sid }}**: {{ s.error }}
+{% endfor %}
+{%- endif %}
+{% if soon %}
+
+## Tracked deadlines in the next 14 days
+
+{% for o in soon -%}
+- **{{ o.title_en }}** ({{ o.org_name }}): {{ present.deadline_label(o.deadline, o.deadline_kind) }} · {{ o.app_status or "favourite" }} · [link]({{ o.canonical_url }})
+{% endfor %}
+{%- endif %}
+
+## New in your feed
+
+{% for o in new -%}
+### {{ o.title_en }}
+{{ o.org_name or "Organisation unclear" }} · {{ present.TYPE_LABELS.get(o.type, o.type) }} · {{ present.location(o) }} · {{ present.deadline_label(o.deadline, o.deadline_kind) }}
+{{ present.money_badge(o.conditions) }}{% if o.eligibility_flag and o.eligibility_flag != "ok" %} · eligibility: {{ o.eligibility_flag | replace("_", " ") }}{% endif %}
+
+{{ o.summary_en }}
+{% for r in (o.reasons or [])[:2] %}
+- {{ r }}
+{%- endfor %}
+
+[Original call]({{ o.canonical_url }})
+
+{% else -%}
+Nothing new this time.
+{% endfor %}
+{% if disc %}
+
+## Discovery
+
+{% for o in disc -%}
+- **{{ o.title_en }}** ({{ o.org_name }}), {{ o.discovery_reason }} · {{ present.deadline_label(o.deadline, o.deadline_kind) }} · [link]({{ o.canonical_url }})
+{% endfor %}
+{%- endif %}
+
+## Sources
+
+| Source | Listed | New | Updated | Error |
+|---|---|---|---|---|
+{% for sid, s in sources.items() -%}
+| {{ sid }} | {{ s['items'] }} | {{ s.processed.get("new", 0) }} | {{ s.processed.get("updated", 0) }} | {{ (s.error or "")[:60] }} |
+{% endfor %}

@@ -1,0 +1,25 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+
+# ---- Personal: never shared ------------------------------------------------
+# Your profile facts, taste, keywords and tuned weights (template: preferences.example.toml)
+preferences.toml
+preferences.*.toml
+!preferences.example.toml
+# Everything the app learns or stores about you: database, examples, stars and
+# dismissals (signals.jsonl), reference projects, cached pages, logs
+data/
+# Generated briefs, portfolio PDFs and reports
+output/
+# Local list of studios (the shared Google Sheet is the master list)
+studios.toml
+# The brief this project was planned from (contains a personal bio)
+PLAN_PROMPT.md
+
+# ---- Research logs from setting up sources (regenerable with scripts/) -----
+docs/*.json
+docs/*.txt
+docs/*.err

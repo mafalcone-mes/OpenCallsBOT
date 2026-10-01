@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Feed{% endblock %}
+{% block main %}
+<h1>Feed</h1>
+<p class="lede">Ranked by how close each call is to your projects and to the examples you've marked. Money and fees are shown, never filtered out for you.</p>
+{% if portfolio.warnings %}
+<details class="warnings"><summary>{{ portfolio.warnings | length }} note{{ 's' if portfolio.warnings | length != 1 }} about the portfolio content (fix these in the website)</summary>
+  <ul>{% for w in portfolio.warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+</details>
+{% endif %}
+{% include "_filters.html" %}
+<p class="small muted">{{ rows | length }} opportunit{{ 'y' if rows | length == 1 else 'ies' }}{% if hidden_count %} · <a href="/hidden">{{ hidden_count }} hidden by your rules</a>{% endif %}</p>
+{% if rows %}
+<div class="cards">
+  {% for o in rows %}{% include "_card.html" %}{% endfor %}
+</div>
+{% else %}
+<div class="empty">Nothing here yet. {% if not f %}Press <strong>Refresh</strong> to search your sources.{% else %}Try clearing some filters.{% endif %}</div>
+{% endif %}
+{% endblock %}

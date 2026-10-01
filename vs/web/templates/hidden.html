@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Hidden by your rules{% endblock %}
+{% block main %}
+<p class="small muted"><a href="/">← Feed</a></p>
+<h1>Hidden by your rules · {{ total }}</h1>
+<p class="lede">Nothing here is deleted. These match your rules in <code>preferences.toml</code>: <code>[intake] field_titles</code> (for big institutions, the title must name one of your fields) and <code>[taste] hide_if</code> (never-show). Change the rules and anything that no longer matches comes back at the next refresh or re-score. Items you saved are never hidden.</p>
+{% for reason, rows in groups.items() %}
+  <h2>{{ reason }} · {{ rows | length }}</h2>
+  <table>
+    {% for o in rows %}
+    <tr><td><a href="/o/{{ o.id }}">{{ o.title_en or o.title_original }}</a></td><td class="small muted">{{ o.org_name or '' }}</td><td class="small muted">{{ o.source_id }}</td><td class="small"><a href="{{ o.canonical_url }}" target="_blank" rel="noopener">original ↗</a></td></tr>
+    {% endfor %}
+  </table>
+{% else %}
+  <div class="empty">Nothing hidden.</div>
+{% endfor %}
+{% endblock %}

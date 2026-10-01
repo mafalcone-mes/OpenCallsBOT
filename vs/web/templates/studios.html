@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Studios to approach{% endblock %}
+{% block main %}
+<h1>Studios to approach · {{ total }}</h1>
+<p class="lede">Studios that fit your work. Most small studios don't publish vacancies: they take spontaneous and internship applications. Where a studio has a jobs or internship page, the app also watches it and anything new appears in your feed. Edit the list in <code>studios.toml</code>.</p>
+<form class="filters" method="get">
+  <select name="country" onchange="this.form.submit()"><option value="">All countries</option>{% for c in countries %}<option value="{{ c }}" {{ 'selected' if c == sel_country }}>{{ c }}</option>{% endfor %}</select>
+  <select name="kind" onchange="this.form.submit()"><option value="">All types</option>{% for k in kinds %}<option value="{{ k }}" {{ 'selected' if k == sel_kind }}>{{ k }}</option>{% endfor %}</select>
+  {% if sel_country or sel_kind %}<a class="btn ghost" href="/studios">Clear</a>{% endif %}
+</form>
+{% for country, rows in groups.items() %}
+<h2>{{ country }}</h2>
+<div class="cards">
+  {% for s in rows %}
+  <article class="card">
+    <div class="head"><div style="flex:1">
+      <h3><a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.name }} ↗</a></h3>
+      <div class="org">{{ s.city }}</div>
+    </div></div>
+    <div class="chips">{% for k in s.types %}<span class="chip type">{{ k }}</span>{% endfor %}
+      {% if s.watched %}<span class="chip money" title="Its jobs/internship page is on your watchlist">jobs page watched</span>{% endif %}</div>
+    {% if s.description %}<p class="reason muted">{{ s.description }}</p>{% endif %}
+    {% if s.why %}<p class="small">{{ s.why }}</p>{% endif %}
+    <div class="foot">
+      {% if s.jobs_url %}<a class="btn ghost" href="{{ s.jobs_url }}" target="_blank" rel="noopener">Jobs / internships ↗</a>{% endif %}
+      <form method="post" action="/studios/status" style="margin-left:auto">
+        <input type="hidden" name="name" value="{{ s.name }}">
+        <select name="status" onchange="this.form.submit()">{% for st in statuses %}<option value="{{ st }}" {{ 'selected' if st == s.status }}>{{ st }}</option>{% endfor %}</select>
+      </form>
+    </div>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty">No studios yet.</div>
+{% endfor %}
+{% endblock %}

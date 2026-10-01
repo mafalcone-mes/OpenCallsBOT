@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Sources{% endblock %}
+{% block main %}
+<h1>Sources</h1>
+<p class="lede">Where the app looks. Edit the list in <code>preferences.toml</code>. A source is refetched at most every 12 hours unless you force it.</p>
+
+{% if llm_error %}<div class="notice">{{ llm_error }}</div>{% else %}<p class="small muted" style="margin-top:8px">Local models: {{ models | join(', ') or 'none pulled' }}</p>{% endif %}
+
+<div style="display:flex; gap:8px; margin-top:16px">
+  <form method="post" action="/refresh"><button class="btn primary">Refresh</button></form>
+  <form method="post" action="/refresh"><input type="hidden" name="force" value="1"><button class="btn">Refresh all, ignore the 12 h wait</button></form>
+  <form method="post" action="/rescore"><button class="btn">Re-score only</button></form>
+</div>
+
+<table>
+  <tr><th>Source</th><th>Kind</th><th>Open items</th><th>Last OK</th><th>Listed per run</th><th>Health</th><th></th></tr>
+  {% for sid, cfg in configured %}{% set st = states.get(sid) %}
+  {% set hist = (st.items_history if st else []) or [] %}
+  {% set median = (hist | sort)[hist | length // 2] if hist else 0 %}
+  <tr>
+    <td><strong>{{ sid }}</strong><br><a class="small muted" href="{{ cfg.url }}" target="_blank">{{ (cfg.url or '')[:60] }}</a></td>
+    <td class="small">{{ cfg.adapter }}{% if cfg.get('enabled') == false %} (off){% endif %}</td>
+    <td>{{ counts.get(sid, 0) }}</td>
+    <td class="small">{{ (st.last_ok or '—')[:16] | replace('T', ' ') if st else '—' }}</td>
+    <td class="small">{{ hist[-5:] | join(' · ') }}</td>
+    <td class="small">
+      {% if not st %}<span class="muted">not run yet</span>
+      {% elif st.error %}<span class="err" title="{{ st.error }}">error: {{ st.error[:80] }}</span>
+      {% elif cfg.adapter != 'watch' and st.items_last == 0 and median > 0 %}<span class="warn">0 items (usually {{ median }}): layout may have changed</span>
+      {% else %}<span class="ok">ok</span>{% endif %}
+    </td>
+    <td><form method="post" action="/refresh"><input type="hidden" name="source" value="{{ sid }}"><input type="hidden" name="force" value="1"><button class="btn ghost">Run</button></form></td>
+  </tr>
+  {% endfor %}
+</table>
+
+<h2>Recent runs</h2>
+<table>
+  <tr><th>Run</th><th>Started</th><th>Status</th><th>New</th><th>Updated</th><th>Expired</th><th>Report</th></tr>
+  {% for r in runs %}
+  <tr>
+    <td><a href="/runs/{{ r.id }}">#{{ r.id }}</a></td>
+    <td class="small">{{ (r.started or '')[:16] | replace('T', ' ') }}</td>
+    <td class="{{ 'ok' if r.status == 'done' else 'err' if r.status == 'failed' else 'warn' }}">{{ r.status }}</td>
+    <td>{{ r.counts.get('new', '') if r.counts else '' }}</td>
+    <td>{{ r.counts.get('updated', '') if r.counts else '' }}</td>
+    <td>{{ r.counts.get('expired', '') if r.counts else '' }}</td>
+    <td>{% if r.report_path %}<a class="small" href="/files?path={{ r.report_path | urlencode }}" target="_blank">.md</a>{% endif %}</td>
+  </tr>
+  {% else %}<tr><td colspan="7" class="muted">No runs yet.</td></tr>{% endfor %}
+</table>
+{% endblock %}

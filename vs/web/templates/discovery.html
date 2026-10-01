@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Discovery{% endblock %}
+{% block main %}
+<h1>Discovery</h1>
+<p class="lede">Less obvious matches: adjacent fields, organisations new to you, and medium matches unlike anything you've marked. Favourite or dismiss them like any other item and the feed learns from it.</p>
+{% include "_filters.html" %}
+{% for cluster, rows in groups.items() %}
+  <h2>{{ cluster }}</h2>
+  <div class="cards">{% for o in rows %}{% include "_card.html" %}{% endfor %}</div>
+{% else %}
+  <div class="empty">Discovery fills in after a refresh with at least a few dozen opportunities.</div>
+{% endfor %}
+{% endblock %}
