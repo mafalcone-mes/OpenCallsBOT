@@ -1,5 +1,6 @@
-# vacancies_searcher
+# OpenCallsBOT
 
+_vacancies_searcher: scraping websites to look for open calls, jobs and residencies that fit your work._
 A local tool for creative professionals: it finds **jobs, residencies, open
 calls, grants, fellowships, competitions and research positions** that fit your
 portfolio, **learns your taste** from what you star and dismiss, and prepares an
