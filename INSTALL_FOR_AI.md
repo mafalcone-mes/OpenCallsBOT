@@ -62,10 +62,10 @@ invitation from its owner.
 ```bash
 gh --version || brew install gh
 gh auth status || gh auth login           # the person logs in in the browser
-cd ~ && gh repo clone OWNER/vacancies-searcher && cd vacancies-searcher
+cd ~ && gh repo clone mafalcone-mes/OpenCallsBOT && cd OpenCallsBOT
 ```
 
-(`OWNER/vacancies-searcher` is in the invitation email; `git clone` works too.)
+(Or `git clone https://github.com/mafalcone-mes/OpenCallsBOT.git`.)
 
 ## 4. Python environment and tests
 
