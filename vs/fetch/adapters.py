@@ -152,7 +152,7 @@ def html_list(client: PoliteClient, source_id: str, cfg: dict) -> list[RawItem]:
             href = urljoin(str(r.url), a.attributes.get("href") or "")
             if pattern.fullmatch(href):
                 text = _link_text(a)
-                if len(text) > len(titles.get(href, "")):
+                if href not in titles or len(text) > len(titles[href]):
                     titles[href] = text
     if errors and len(errors) == len(pages):
         raise RuntimeError("Every listing page failed: " + " | ".join(errors[:3]))
