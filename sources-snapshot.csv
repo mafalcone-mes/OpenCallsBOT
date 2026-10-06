@@ -46,6 +46,16 @@ source,unesco,unesco,TRUE,https://careers.unesco.org/go/All-jobs-openings/782502
 source,who,World Health Organization (WHO),TRUE,https://careers.who.int/careersection/ex/jobsearch.ftl?lang=en,taleo,"{""title_filter"": true, ""base"": ""https://careers.who.int"", ""section"": ""ex"", ""org"": ""World Health Organization (WHO)"", ""pages"": 3, ""prefilter"": true, ""keep"": 15}",0.7,job,,,,,,,
 source,fao,Food and Agriculture Organization (FAO),TRUE,https://jobs.fao.org/careersection/fao_external/jobsearch.ftl?lang=en,taleo,"{""title_filter"": true, ""base"": ""https://jobs.fao.org"", ""section"": ""fao_external"", ""org"": ""Food and Agriculture Organization (FAO)"", ""pages"": 3, ""prefilter"": true, ""keep"": 15}",0.7,job,,,,,,,
 source,jobspy,jobspy,TRUE,https://www.indeed.com/worldwide,jobspy,"{""keep"": 40}",0.6,job,,,,,,,
+source,interactive-things,interactive-things,TRUE,https://www.interactivethings.com/jobs/,html_list,"{""link_pattern"": ""https://www\\.interactivethings\\.com/jobs/[^/?#]+/""}",1.0,job,,,,,,,
+source,kontinentalist,kontinentalist,TRUE,https://kontinentalist.com/careers,html_list,"{""link_pattern"": ""https://kontinentalist\\.com/careers/[^/?#]+""}",0.8,job,,,,,,,
+source,framer-framed,framer-framed,TRUE,https://framerframed.nl/en/category/open-call/,html_list,"{""link_pattern"": ""https://framerframed\\.nl/en/dossier/[^/?#]+/"", ""require"": ""call|open call|bando|residen|fellowship|grant|award|prize|premio|concorso|competition|apply|candidat|opportunit"", ""max_items"": 25}",0.9,open_call,,,,,,,
+source,arteaporte,arteaporte,TRUE,https://www.arteaporte.com/en/call-for-artist/,html_list,"{""link_pattern"": ""https://www\\.arteaporte\\.com/(?:en/)?(?:call-for-artist/[^/?#]+|call-for-artists?-[^/?#]+|open-call-[^/?#]+)/?"", ""max_items"": 8}",0.4,open_call,,,,,,,"Turin; group shows in shops/venues, many calls charge a participation fee"
+source,matadero-madrid,matadero-madrid,TRUE,https://www.mataderomadrid.org/en/calls,html_list,"{""link_pattern"": ""https://www\\.mataderomadrid\\.org/en/calls/[^/?#]+"", ""max_items"": 20}",0.8,open_call,,,,,,,
+source,careof,careof,TRUE,https://careof.org/news,html_list,"{""link_pattern"": ""https://careof\\.org/news/[^/?#]+"", ""require"": ""call|open call|bando|residen|fellowship|grant|award|prize|premio|concorso|competition|apply|candidat|opportunit|submit|vacanc|vacature|lavora"", ""max_items"": 20}",0.8,open_call,,,,,,,"Milan; ArteVisione, Premio Mila"
+source,stroom,stroom,TRUE,https://www.stroom.nl/en/stroom/news,html_list,"{""link_pattern"": ""https://www\\.stroom\\.nl/en/stroom/news/[^/?#]+"", ""require"": ""call|open call|bando|residen|fellowship|grant|award|prize|premio|concorso|competition|apply|candidat|opportunit|submit|vacanc|vacature|lavora"", ""max_items"": 20}",0.8,open_call,,,,,,,The Hague
+source,bjcem,bjcem,TRUE,https://www.bjcem.org/category/artists-space/calls/feed/,rss,,0.7,open_call,,,,,,,Mediterranean young artists network
+source,fotodok,fotodok,TRUE,https://www.fotodok.org/feed/,rss,"{""require"": ""call|open call|bando|residen|fellowship|grant|award|prize|premio|concorso|competition|apply|candidat|opportunit|submit|vacanc|vacature|lavora""}",0.8,open_call,,,,,,,Utrecht; Lighthouse talent programme
+source,photoireland,photoireland,TRUE,https://photoireland.org/feed/,rss,"{""require"": ""call|open call|bando|residen|fellowship|grant|award|prize|premio|concorso|competition|apply|candidat|opportunit|submit|vacanc|vacature|lavora""}",0.7,open_call,,,,,,,FUTURES member
 watch,,Waag Futurelab,TRUE,https://waag.org/en/vacancies/,watch,,,,"participat*, civic tech",,,,,,
 watch,,Het Nieuwe Instituut (open calls),TRUE,https://nieuweinstituut.nl/en/projects/over-ons/open-calls,watch,,,,"research, fellowship, open call",,,,,,
 watch,,Het Nieuwe Instituut (vacancies),TRUE,https://nieuweinstituut.nl/en/projects/over-ons/vacatures,watch,,,,"job, research",,,,,,
@@ -118,6 +128,40 @@ watch,,Amnesty International Italia (lavora con noi),TRUE,https://www.amnesty.it
 watch,,Emergency (lavora con noi),TRUE,https://www.emergency.it/lavora-con-noi/,watch,,,,"NGO, italy",,,,,,
 watch,,ActionAid Italia (lavora con noi),TRUE,https://www.actionaid.it/chi-siamo/lavora-con-noi/,watch,,,,"NGO, italy",,,,,,
 watch,,CIVICUS (resourcing opportunities),TRUE,https://www.civicus.org/index.php/engage-and-act/explore-resourcing-opportunities,watch,,,,"civil society, grant",,,,,,
+watch,,Fathom Information Design (careers),TRUE,https://www.fathom.info/careers/,watch,,,,"studio, information design, US",,,,,,
+watch,,Datawrapper (careers),TRUE,https://www.datawrapper.de/careers,watch,,,,"data visualization, DE",,,,,,
+watch,,National Geographic Society (grants),TRUE,https://www.nationalgeographic.org/society/grants-and-investments/,watch,,,,"grant, storytelling, exploration",,,,,,"URL from a web search, not opened: the site's robots.txt blocks Claude Code (the app's own agent is allowed)"
+watch,,National Geographic Society (careers),TRUE,https://www.nationalgeographic.org/about/careers,watch,,,,"job, internship, US",,,,,,"URL from a web search, not opened: the site's robots.txt blocks Claude Code; internships reopen 18 Jan 2027"
+watch,,Royal Geographical Society (grants),TRUE,https://www.rgs.org/exploration/grants,watch,,,,"grant, geography, fieldwork, UK",,,,,,
+watch,,The Explorers Club (grants),TRUE,https://www.explorers.org/grants/,watch,,,,"grant, exploration, US",,,,,,
+watch,,Wildlife Photographer of the Year,TRUE,https://www.nhm.ac.uk/wpy,watch,,,,"photography award, nature, UK",,,,,,
+watch,,Sony World Photography Awards,TRUE,https://www.worldphoto.org/sony-world-photography-awards,watch,,,,"photography award, free to enter",,,,,,
+watch,,Rotterdam Photo (open calls),TRUE,https://rotterdamphoto.eu/,watch,,,,"photography, open call, NL",,,,,,2027 open call: deadline 4 Nov 2026 (projects EUR 35/entry); the free Amarte Dutch Talent grants closed 4 Oct
+watch,,"Page Not Found (Thesis Award, open calls)",TRUE,https://page-not-found.nl/,watch,,,,"artists' publications, award, NL",,,,,,The Hague; homepage only (the news page needs JavaScript). Thesis Award 2026 open 1-31 Oct 2026. The old pagenotfound.nl is a parked domain
+watch,,TBA21 (news),TRUE,https://tba21.org/news,watch,,,,"art, ocean, commission",,,,,,
+watch,,TBA21-Academy,TRUE,https://tba21.org/tba21_academy,watch,,,,"research, fellowship, ocean",,,,,,"Ocean Fellowship, Tentacular Fellowship (Ocean Space, Venice)"
+watch,,Pluto (Valencia),TRUE,https://plutoforever.org/,watch,,,,"residency, ES",,,,,,Residencia Portal; the site's RSS has had no posts since 2025
+watch,,BrindisiX (Play Brindisi),TRUE,https://brindisiper.it/playbrindisi,watch,,,,"residency, placemaking, puglia",,,,,,ages 18-35; 2026 call closed 21 Jul 2026
+watch,,Ceske Budejovice 2028 (open calls),TRUE,https://www.budejovice2028.eu/en/open-calls,watch,,,,"art science, residency, CZ",,,,,,home of Ars Biologica (with Ars Electronica); the 2026 call closed 28 Sep 2026
+watch,,MONK Roma,TRUE,https://www.monkroma.it/,watch,,,,"venue, rome",,,,,,no open-call page: homepage watched
+watch,,Scomodo (lavora con noi),TRUE,https://scomodo.org/lavora-con-noi/,watch,,,,"editorial, internship, rome",,,,,,
+watch,,Cesura (Andy Rocchelli Grant),TRUE,https://www.cesura.it/andy-rocchelli-grant/,watch,,,,"photography, grant, italy",,,,,,
+watch,,Cesura (labs and workshops),TRUE,https://www.cesura.it/workshops/,watch,,,,"photography, workshop, italy",,,,,,see also https://www.cesura.it/lab/
+watch,,FUTURES Photography (platform),TRUE,https://www.futures-photography.com/,watch,,,,"photography, talent, EU",,,,,,"each member (CAMERA, Fotofestiwal, PhotoIreland, FOMU, Void, Organ Vida...) nominates 5 talents a year through its own open call"
+watch,,FUTURES Photography (residencies),TRUE,https://www.futures-photography.com/residencies,watch,,,,"photography, residency, EU",,,,,,
+watch,,International Photography Festivals Association (IPFA Award),TRUE,https://www.photographyfestivalsassociation.com/,watch,,,,"photography, award, festivals",,,,,,Barcelona-based network of festivals; also a festivals calendar
+watch,,Athens Photo Festival,TRUE,https://photofestival.gr/,watch,,,,"photography, open call, GR",,,,,,open call usually Jan-Mar
+watch,,Getxophoto,TRUE,https://www.getxophoto.com/,watch,,,,"photography, open call, ES",,,,,,open call runs on Picter
+watch,,Format Festival,TRUE,https://formatfestival.com/,watch,,,,"photography, open call, UK",,,,,,FORMAT27 open call (theme PLAY)
+watch,,Copenhagen Photo Festival (calls for entry),TRUE,https://copenhagenphotofestival.com/calls-for-entry/,watch,,,,"photography, open call, DK",,,,,,
+watch,,Encontros da Imagem,TRUE,https://encontrosdaimagem.com/,watch,,,,"photography, award, photobook, PT",,,,,,
+watch,,Fiebre Photobook (Dummy Award),TRUE,https://fiebrephotobook.com/dummy-award/,watch,,,,"photobook, award, ES",,,,,,
+watch,,Landskrona Foto,TRUE,https://www.landskronafoto.org/,watch,,,,"photography, residency, dummy award, SE",,,,,,
+watch,,FOMU (vacatures en stages),TRUE,https://fomu.be/vacatures-stages,watch,,,,"photography museum, job, internship, BE",,,,,,replaces the old fomu.atomuseum.be exclusion (that address is unreachable)
+watch,,Tabakalera (open calls),TRUE,https://www.tabakalera.eus/en/cultural-agenda-san-sebastian/open-calls,watch,,,,"residency, art science, ES",,,,,,
+watch,,Hangar (convocatories),TRUE,https://hangar.org/en/category/convocatories-3/,watch,,,,"residency, production, ES",,,,,,
+watch,,Viafarini (residency),TRUE,https://viafarini.org/viafarini-in-residence-2/,watch,,,,"residency, italy",,,,,,
+watch,,Manifattura Tabacchi (arte e residenze),TRUE,https://www.manifatturatabacchi.com/arte/,watch,,,,"residency, italy",,,,,,Florence; the old residenze-dartista page redirects here
 studio,,Studio Joost Grootens,,https://www.joostgrootens.nl/,,,,,,Amsterdam,NL,"information design, editorial",,,
 studio,,Irma Boom Office,,https://www.irmaboom.nl/,,,,,,Amsterdam,NL,"editorial, books",Irma Boom is an Amsterdam-based graphic designer specialised in making books.,,
 studio,,Metahaven,,https://metahaven.net/,,,,,,Amsterdam,NL,"critical, research",,,
@@ -139,7 +183,7 @@ studio,,Studio Mut,,https://www.studiomut.com/,,,,,,Bolzano,IT,"cultural, editor
 studio,,Lupo & Burtscher,,https://www.lupoburtscher.it/,,,,,,Bolzano,IT,"cultural, exhibition",,,
 studio,,Dinamo Milano,,https://www.dinamomilano.com/,,,,,,Milan,IT,"cultural, exhibition",,,
 studio,,Leonardo Sonnoli / Tassinari Vetta,,https://www.tassinarivetta.it/,,,,,,Trieste,IT,"cultural, type","Tassinari/Vetta is one of the best-established design offices in Italy, with a focus on visual identity, editorial and environmental design for cultural institutions and events, as well as major commercial clients.",,
-studio,,Tomo Tomo,,https://www.tomotomo.it/,,,,,,Bologna,IT,"cultural, editorial",Graphic Design,,
+studio,,Tomo Tomo,,https://www.tomotomo.it/,,,,,,Milan,IT,"cultural, editorial","Communication design studio (editorial, visual identities, digital tools), mainly for culture; clients include La Biennale di Venezia and Electa.",,
 studio,,OSP Open Source Publishing,,https://osp.kitchen/,,,,,,Brussels,BE,"critical, open source, editorial",,,
 studio,,Base Design,,https://www.basedesign.com/,,,,,,Brussels,BE,"identity, cultural","We design ingeniously simple brands and build unique personalities. We humanize corporations, launch visions and clarify the complex.",https://www.basedesign.com/jobs,
 studio,,Bureau Borsche,,https://www.bureauborsche.com/,,,,,,Munich,DE,"cultural, editorial",,https://bureauborsche.com/info/jobs-and-internships,
@@ -171,6 +215,15 @@ studio,,Formes Vives,,https://www.formes-vives.org/,,,,,,Brittany,FR,"critical, 
 studio,,Bureau d'Etudes,,https://bureaudetudes.org/,,,,,,France,FR,"critical, maps, research","Cartography of political, industrial, research, social, power networks.",,
 studio,,Kollektiv Orangotango,,https://orangotango.info/,,,,,,Berlin,DE,"counter-mapping, participatory, critical",Collective for popular education and creative protest,,
 studio,,Spector Books,,https://www.spectorbooks.com/,,,,,,Leipzig,DE,"editorial, books","Spector’s publishing practice is settled squarely in the intersection of art, theory, and design. Based in Leipzig Germany, our publishing house explores the possibilities offered by an active exchange between all partie",,
+studio,,Accurat,,https://www.accurat.it/,,,,,,Milan,IT,"information design, interactive","Data-driven design studio (Milan, New York).",https://www.accurat.it/jobs,
+studio,,Fathom Information Design,,https://www.fathom.info/,,,,,,Boston,US,"information design, interactive","Information design studio making complex domains accessible, since 2010.",https://www.fathom.info/careers/,
+studio,,Interactive Things,,https://www.interactivethings.com/,,,,,,Zurich,CH,"information design, interactive",Design and development studio for human data interaction; paid six-month data visualization internships.,https://www.interactivethings.com/jobs/,
+studio,,Studio NAND,,https://nand.io/,,,,,,Berlin,DE,"information design, interactive",,,
+studio,,Ferdio,,https://ferdio.com/en/,,,,,,Copenhagen,DK,"information design, animation",,,
+studio,,Sheldon Studio,,https://sheldon.studio/,,,,,,Milan,IT,information design,,,
+studio,,Periscopic,,https://periscopic.com/,,,,,,Portland,US,"information design, critical",,,
+studio,,Kontinentalist,,https://kontinentalist.com/,,,,,,Singapore,SG,"information design, editorial","Storytellers, engineers and designers amplifying Asian voices through visual stories.",https://kontinentalist.com/careers,
+studio,,Domestic Data Streamers,,https://www.domesticstreamers.com/,,,,,,Barcelona,ES,"participatory, information design, exhibition",,,
 excluded,,TransArtists (other open calls),FALSE,https://www.transartists.org/en/other-open-calls,,,,,,,,,,,403 to automated requests; its own calls page is read instead
 excluded,,GIJN jobs,FALSE,https://gijn.org/jobs/,,,,,,,,,,,403
 excluded,,Dezeen Jobs,FALSE,https://www.dezeenjobs.com/feed/,,,,,,,,,,,RSS answers 403
@@ -209,7 +262,6 @@ excluded,,Foam (Foam Talent),FALSE,https://www.foam.org/,,,,,,,,,,,bot protectio
 excluded,,Aperture,FALSE,https://aperture.org/,,,,,,,,,,,403 (bot protection)
 excluded,,Gazebook,FALSE,https://www.gazebook.it/,,,,,,,,,,,403
 excluded,,Les Rencontres d'Arles,FALSE,https://www.rencontres-arles.com/,,,,,,,,,,,browser check (bot protection)
-excluded,,FOMU Antwerp,FALSE,https://www.fomu.atomuseum.be/,,,,,,,,,,,unreachable
 excluded,,Amnesty International,FALSE,https://www.amnesty.org/en/careers/,,,,,,,,,,,403 (national sections NL and Italy are watched)
 excluded,,Human Rights Watch website,FALSE,https://www.hrw.org/,,,,,,,,,,,403 (its jobs are read through Greenhouse instead)
 excluded,,Article 19,FALSE,https://www.article19.org/,,,,,,,,,,,403
@@ -232,3 +284,13 @@ excluded,,Kummer & Herrman,FALSE,https://www.kummerherrman.nl/,,,,,,,,,,,unreach
 excluded,,Studio Fludd,FALSE,https://www.studiofludd.it/,,,,,,,,,,,unreachable at this address
 excluded,,Parco Studio,FALSE,https://www.parcostudio.it/,,,,,,,,,,,unreachable at this address
 excluded,,46xy (Mario Piazza),FALSE,https://www.46xy.it/,,,,,,,,,,,unreachable at this address
+excluded,,Signal Noise,FALSE,https://signal-noise.co.uk/,,,,,,,,,,,domain now redirects to Economist Enterprise
+excluded,,Kiln / Flourish jobs,FALSE,https://flourish.studio/jobs/,,,,,,,,,,,Flourish is now part of Canva: jobs go to Canva's careers site
+excluded,,Senseable City Lab (MIT),FALSE,https://senseable.mit.edu/,,,,,,,,,,,JavaScript-only (EURAXESS and the MIT site cover research posts)
+excluded,,Earth Journalism Network,FALSE,https://earthjournalism.net/,,,,,,,,,,,403
+excluded,,National Geographic (Disney careers),FALSE,https://www.disneycareers.com/en,,,,,,,,,,,robots.txt disallows /search-jobs/ (National Geographic Partners jobs are listed there)
+excluded,,"Pulitzer Center (grants, jobs)",FALSE,https://pulitzercenter.org/opportunities/reporting-grants-fellowships,,,,,,,,,,,"403 to the app's client (bot protection), although it answers a plain browser: check it by hand"
+excluded,,"Mongabay (jobs, fellowships, pitches)",FALSE,https://mongabay.org/opportunities/,,,,,,,,,,,"403 to the app's client (bot protection), although it answers a plain browser: check it by hand"
+excluded,,Atlas Obscura (jobs),FALSE,https://www.atlasobscura.com/jobs,,,,,,,,,,,"403 to the app's client (bot protection), although it answers a plain browser: check it by hand"
+excluded,,Diecidecimi Art Festival,FALSE,https://linktr.ee/hello.diecidecimi,,,,,,,,,,,"no website: Instagram plus a Linktree whose robots.txt disallows bots; Biella, open call yearly (hello.diecidecimi@gmail.com)"
+excluded,,Organ Vida,FALSE,https://organvida.com/,,,,,,,,,,,JavaScript-only; its FUTURES call is covered by the FUTURES watch
