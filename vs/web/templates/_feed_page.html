@@ -1,0 +1,12 @@
+{% set ns = namespace(far=prev_far) %}
+{% for o in rows %}{% set far = o.final is not none and o.final < present.far_below() %}
+{% if far and not ns.far %}<div class="batch-rule far-rule" role="separator"><span>Far from your work · below {{ (present.far_below() * 100) | int }}</span></div>{% endif %}{% set ns.far = far %}
+{% include "_card.html" %}{% endfor %}
+{% if next_offset < total %}
+<div class="more">
+  <button class="btn" hx-get="/feed/more?{{ qs ~ '&' if qs }}g={{ tab.id }}&offset={{ next_offset }}{{ '&older=1' if older }}" hx-target="closest .more" hx-swap="outerHTML">
+    Show {{ [total - next_offset, present.FEED_PAGE] | min }} more
+  </button>
+  <span class="small muted">{{ next_offset }} of {{ total }} shown</span>
+</div>
+{% endif %}

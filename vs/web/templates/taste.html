@@ -18,7 +18,7 @@
       {% else %}
         <p class="muted small">No summary yet.</p>
       {% endif %}
-      <form method="post" action="/taste/summary" style="margin-top:10px"><button class="btn">{{ 'Rewrite summary' if taste_sum else 'Write summary' }}</button></form>
+      <form method="post" action="/taste/summary" style="margin-top:12px"><button class="btn">{{ 'Rewrite summary' if taste_sum else 'Write summary' }}</button></form>
     </div>
 
     <div class="box" style="margin-top:16px">
@@ -55,7 +55,7 @@
         {% endif %}{% endfor %}
       </table>
       {% endif %}
-      <form method="post" action="/taste/eval" style="margin-top:10px"><button class="btn">Run the check</button></form>
+      <form method="post" action="/taste/eval" style="margin-top:12px"><button class="btn">Run the check</button></form>
     </div>
   </div>
 
@@ -69,10 +69,10 @@
       <h3>Suggested sources to watch</h3>
       <p class="small muted">Found from organisations of examples you liked. Nothing is watched until you accept.</p>
       {% for s in suggestions %}
-      <form method="post" action="/sources/suggestion" style="margin-top:10px">
+      <form method="post" action="/sources/suggestion" style="margin-top:12px">
         <input type="hidden" name="url" value="{{ s.url }}"><input type="hidden" name="name" value="{{ s.name }}">
         <strong>{{ s.name }}</strong> <a class="small muted" href="{{ s.url }}" target="_blank">{{ s.url }}</a>
-        <div style="display:flex; gap:6px; margin-top:4px"><button class="btn" name="action" value="accept">Watch it</button><button class="btn ghost" name="action" value="reject">No</button></div>
+        <div style="display:flex; gap:8px; margin-top:4px"><button class="btn" name="action" value="accept">Watch it</button><button class="btn ghost" name="action" value="reject">No</button></div>
       </form>
       {% endfor %}
     </div>
@@ -99,7 +99,7 @@
     {% for studio, items in refs | groupby('studio') %}
     <details class="mini"><summary><strong>{{ studio }}</strong> · {{ items | length }} projects</summary>
       {% for r in items %}
-      <div style="display:flex; gap:8px; align-items:baseline; margin-top:6px">
+      <div style="display:flex; gap:8px; align-items:baseline; margin-top:8px">
         <a class="small" style="flex:1" href="{{ r.url }}" target="_blank" rel="noopener">{{ r.title }}</a>
         <form method="post" action="/references/remove"><input type="hidden" name="ref_id" value="{{ r.id }}"><button class="btn ghost" title="Remove">✕</button></form>
       </div>

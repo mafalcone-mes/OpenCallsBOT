@@ -45,3 +45,15 @@ def test_decimal_comma_and_bad_json_do_not_break(monkeypatch):
     data = _apply(rows, monkeypatch)
     assert data["sources"]["x"]["weight"] == 0.9
     assert "not valid JSON" in data["_sheet_error"]
+
+
+def test_a_local_csv_replaces_the_sheet_without_touching_it(monkeypatch, tmp_path):
+    """VS_SOURCES_CSV: try another list of sources; the Google Sheet is not read."""
+    local = tmp_path / "trial.csv"
+    local.write_text("kind,id,name,enabled,url,how_read\nsource,trial,trial,TRUE,https://example.org/feed,rss\n", encoding="utf-8")
+    monkeypatch.setenv("VS_SOURCES_CSV", str(local))
+    monkeypatch.setenv("VS_NO_SHEET", "1")  # a local list still applies when the sheet is switched off
+    import httpx
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: (_ for _ in ()).throw(AssertionError("the sheet was fetched")))
+    data = sheet.apply_to_prefs({"sheet": {"enabled": False}, "sources": {"old": {}}, "watchlist": []})
+    assert list(data["sources"]) == ["trial"]

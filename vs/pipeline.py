@@ -1,46 +1,98 @@
-"""Refresh: fetch every source, extract new items with the LLM, dedupe,
-expire, score. Also the flow for adding an example."""
+"""Refresh: four agents (vs/agents.py) list every source, download the pages,
+read them with the LLM and score each one as it is read; then dedupe, expire
+and score everything once more. Also the flow for adding an example."""
 
 from __future__ import annotations
 
 import hashlib
 import json
 import re
+import sqlite3
 import threading
+import time
 import traceback
-from datetime import date, datetime, timedelta, timezone
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 import numpy as np
 import trafilatura
 from rapidfuzz import fuzz
 
-from vs import db, embed, extract, llm
+from vs import db, embed, expiry, extract, llm
 from vs import portfolio as portfolio_mod
 from vs.config import prefs
 from vs.examples import save_example, write_example
 from vs.fetch import RawItem
-from vs.fetch.adapters import ADAPTERS
 from vs.fetch.polite import Blocked, PoliteClient, canonical_url, domain
-from vs.fetch.watch import check as watch_check
 
-PREFILTER_ADAPTERS = {"jobspy", "euraxess", "eu_ft"}
 
 # ---------------------------------------------------------------- progress
 
-_state = {"running": False, "run_id": None, "lines": [], "started": None}
+_state = {"running": False, "kind": None, "stopping": False, "run_id": None, "lines": [], "started": None, "agents": []}
 _lock = threading.Lock()
 
 
 def progress_state() -> dict:
     with _lock:
-        return {**_state, "lines": list(_state["lines"][-12:])}
+        team = list(_state.get("agents") or [])
+        out = {**_state, "lines": list(_state["lines"][-12:])}
+    out["agents"] = [a.snapshot() for a in team]
+    return out
+
+
+def request_stop() -> bool:
+    """Ask a running refresh to stop reading pages and score what it has."""
+    with _lock:
+        if _state["kind"] != "refresh" or not _state["running"] or _state["stopping"]:
+            return False
+        _state["stopping"] = True
+        team = list(_state.get("agents") or [])
+    _say("Stop requested: finishing the current page, then scoring what was read")
+    for a in team:
+        a.stop()
+    return True
+
+
+def stop_agent(name: str) -> bool:
+    """Stop one agent of a running refresh (and the ones feeding it)."""
+    from vs import agents as agents_mod
+
+    with _lock:
+        team = list(_state.get("agents") or []) if _state["running"] and _state["kind"] == "refresh" else []
+    if not agents_mod.stop(team, name):
+        return False
+    label = next(a.label for a in team if a.name == name)
+    _say(f"{label} stopped" + ("; what it skipped is scored at the end" if name == "scorer"
+                               else ", and the agents before it; what is already queued is finished"))
+    return True
+
+
+def _stopping() -> bool:
+    with _lock:
+        return _state["stopping"]
+
+
+_flushed = {"at": 0.0}
 
 
 def _say(msg: str) -> None:
     stamp = datetime.now().strftime("%H:%M:%S")
     with _lock:
         _state["lines"].append(f"{stamp}  {msg}")
+        flush = _state["kind"] == "refresh" and _state["running"] and time.monotonic() - _flushed["at"] > 60
+        run_id, lines = _state["run_id"], list(_state["lines"])
     print(f"{stamp}  {msg}", flush=True)
+    if flush and run_id:
+        # Saved as the run goes, so an interrupted run can still be timed.
+        # Best effort and never waiting: the caller may itself hold the write
+        # lock (uncommitted changes), and waiting for it stalled every page
+        # for the full 2-minute timeout.
+        _flushed["at"] = time.monotonic()
+        try:
+            with db.session(timeout=0.5) as conn:
+                conn.execute("UPDATE run SET log=? WHERE id=?", ("\n".join(lines), run_id))
+        except sqlite3.OperationalError:
+            pass
 
 
 # ---------------------------------------------------------------- language
@@ -168,10 +220,7 @@ def build_row(item: RawItem, data: dict, checks: dict, text: str, lang: str) -> 
     }
     eligibility = {k: data.get(k) for k in ("age_min", "age_max", "nationalities", "residence", "education", "career_stage")}
     eligibility["evidence"] = data.get("eligibility_evidence") or ""
-    today = date.today().isoformat()
-    status = "open"
-    if deadline and deadline[:10] < today:
-        status = "expired"
+    status = expiry.status_for({**data, "deadline": deadline})
     return {
         "type": data.get("type") or "other",
         "title_original": item.title, "title_en": data.get("title_en") or item.title,
@@ -234,11 +283,23 @@ def find_duplicate(conn, row: dict, vec: np.ndarray | None, model: str, exclude_
 
 # ---------------------------------------------------------------- items
 
-def process_item(client: PoliteClient, conn, item: RawItem, model: str) -> str:
-    """Returns: new | updated | unchanged | skipped | duplicate | failed"""
+@dataclass
+class Prepared:
+    """A page downloaded and turned into text, waiting for the Reader."""
+    item: RawItem
+    text: str
+    chash: str
+    existing: dict | None
+    stale_reject: bool
+
+
+def prepare_item(client: PoliteClient, conn, item: RawItem) -> str | Prepared:
+    """The Downloader's part: everything before the model. Returns a result
+    (unchanged | too_short | failed) when the page needs no reading."""
     key = canonical_url(item.url)
-    existing = conn.execute("SELECT id, content_hash, extraction_status, source_urls, status, extract_version FROM opportunity WHERE dedup_key=?",
-                            (key,)).fetchone()
+    existing = db.row_dict(conn.execute(
+        "SELECT id, content_hash, extraction_status, source_urls, status, extract_version FROM opportunity WHERE dedup_key=?",
+        (key,)).fetchone())
     # Items rejected as "not a call" under an older prompt are read again.
     stale_reject = bool(existing) and existing["status"] == "not_opportunity" and existing["extract_version"] != extract.EXTRACT_VERSION
     if existing and existing["extraction_status"] == "done" and not item.text and not stale_reject:
@@ -261,6 +322,14 @@ def process_item(client: PoliteClient, conn, item: RawItem, model: str) -> str:
     if existing and existing["content_hash"] == chash and existing["extraction_status"] == "done" and not stale_reject:
         conn.execute("UPDATE opportunity SET last_seen=? WHERE id=?", (db.now(), existing["id"]))
         return "unchanged"
+    return Prepared(item, text, chash, existing, stale_reject)
+
+
+def read_item(conn, prepared: Prepared, model: str) -> tuple[str, int | None]:
+    """The Reader's part: the model reads the page. Returns (new | updated |
+    skipped | duplicate, opportunity id)."""
+    item, text, chash, existing = prepared.item, prepared.text, prepared.chash, prepared.existing
+    key = canonical_url(item.url)
     lang = detect_lang(text)
     data = extract.extract(text, title=item.title, url=item.url, lang=lang)
     if not data.get("is_opportunity", True):
@@ -269,17 +338,17 @@ def process_item(client: PoliteClient, conn, item: RawItem, model: str) -> str:
             "VALUES(?,?,?,?,?,'done','not_opportunity',?,?,?) ON CONFLICT(dedup_key) DO UPDATE SET content_hash=excluded.content_hash, "
             "status='not_opportunity', last_seen=excluded.last_seen, extract_version=excluded.extract_version",
             (key, key, item.source_id, item.title, chash, db.now(), db.now(), extract.EXTRACT_VERSION))
-        return "skipped"
+        return "skipped", None
     checks = extract.verify(data, text, lang)
     row = build_row(item, data, checks, text, lang)
-    # Embeddings are computed later in one batch (merge_near_duplicates), so
-    # the chat and embedding models don't swap in video memory per item.
+    # Cross-site duplicates that need embeddings are found at the end of the
+    # refresh, in one batch (merge_near_duplicates).
     dup = find_duplicate(conn, row, None, model, key)
     if dup:
         _merge_into(conn, dup, [item.url])
-        return "duplicate"
-    upsert(conn, key, item, row, chash)
-    return "updated" if existing else "new"
+        return "duplicate", None
+    opp_id = upsert(conn, key, item, row, chash)
+    return ("updated" if existing else "new"), opp_id
 
 
 def _merge_into(conn, keep: dict, urls: list[str]) -> None:
@@ -297,7 +366,6 @@ def merge_near_duplicates(conn, model: str) -> int:
         "SELECT * FROM opportunity WHERE status IN ('open', 'expired', 'duplicate') AND extraction_status='done' ORDER BY first_seen")]
     vecs = embed.ensure(conn, "opportunity", {o["dedup_key"]: embed.opportunity_text(o) for o in opps}, model)
     cos = lambda x, y: float(vecs[x["dedup_key"]] @ vecs[y["dedup_key"]])  # noqa: E731
-    today = date.today().isoformat()
 
     # 1. Re-check earlier merges with today's rules; restore any that don't hold.
     by_url = {}
@@ -310,7 +378,7 @@ def merge_near_duplicates(conn, model: str) -> int:
         keeper = by_url.get(d["dedup_key"])
         if keeper and why_same(keeper, d, cos(keeper, d)):
             continue
-        status = "expired" if d.get("deadline") and d["deadline"] < today else "open"
+        status = expiry.status_for(d)
         conn.execute("UPDATE opportunity SET status=? WHERE id=?", (status, d["id"]))
         if keeper:
             urls = [u for u in keeper.get("source_urls") or [] if canonical_url(u) != d["dedup_key"]]
@@ -344,13 +412,17 @@ def merge_near_duplicates(conn, model: str) -> int:
 
 
 def prefilter(conn, portfolio, items: list[RawItem], keep: int, model: str) -> list[RawItem]:
-    """For high-volume sources: keep the `keep` items whose title+snippet is
-    closest to the portfolio angles or liked examples. Skips known URLs."""
-    fresh = []
+    """Keep the `keep` items whose title+snippet is closest to the portfolio
+    angles or liked examples, without the slow model. Skips known URLs."""
+    fresh, seen = [], []
     for it in items:
-        row = conn.execute("SELECT extraction_status FROM opportunity WHERE dedup_key=?", (canonical_url(it.url),)).fetchone()
-        if not row or row["extraction_status"] != "done":
-            fresh.append(it)
+        key = canonical_url(it.url)
+        row = conn.execute("SELECT extraction_status FROM opportunity WHERE dedup_key=?", (key,)).fetchone()
+        if not row or row["extraction_status"] != "done" or it.source_id.startswith("watch:"):
+            fresh.append(it)  # new, or a watched page that changed since last time
+        else:
+            seen.append((db.now(), key))
+    conn.executemany("UPDATE opportunity SET last_seen=? WHERE dedup_key=?", seen)
     if len(fresh) <= keep:
         return fresh
     angles = embed.angle_vectors(conn, portfolio, model)
@@ -368,15 +440,24 @@ def prefilter(conn, portfolio, items: list[RawItem], keep: int, model: str) -> l
     return [fresh[i] for i in order]
 
 
+def _took(since: float) -> str:
+    sec = int(time.monotonic() - since)
+    return f"{sec // 3600} h {sec % 3600 // 60} min" if sec >= 3600 else f"{sec // 60} min {sec % 60} s"
+
+
 # ---------------------------------------------------------------- refresh
 
 def refresh(*, force: bool = False, only: str | None = None, rerank: bool = True) -> dict:
+    """Four agents work at the same time (vs/agents.py): each opportunity is
+    listed, downloaded, read and scored in turn, and shows up in the feed as
+    soon as it has its score. At the end: duplicates, rules, expiry, and one
+    scoring pass over everything (discovery, explanations gone out of date)."""
+    from vs import agents as agents_mod
+
     with _lock:
         if _state["running"]:
             raise RuntimeError("A refresh is already running")
-        _state.update(running=True, lines=[], started=db.now())
-    counts = {"new": 0, "updated": 0, "unchanged": 0, "skipped": 0, "too_short": 0, "duplicate": 0, "failed": 0, "expired": 0}
-    sources_report: dict[str, dict] = {}
+        _state.update(running=True, kind="refresh", stopping=False, lines=[], started=db.now(), agents=[])
     with db.session() as conn:
         # A run left 'running' by a killed process was interrupted; items it
         # read are already saved, so the next refresh simply continues.
@@ -389,128 +470,89 @@ def refresh(*, force: bool = False, only: str | None = None, rerank: bool = True
         _say(f"Portfolio: {len(portfolio.projects)} projects, {len(portfolio.angles)} angles (hash {portfolio.profile_hash[:8]})")
         model = llm.embed_model()
         llm.chat_model()  # fail early if no chat model
+        _say(f"Models: pages read with {llm.extract_model()}, matches explained with {llm.chat_model()}")
         p = prefs()
-        fetch_cfg = p.get("fetch", {})
-        min_interval = timedelta(hours=float(fetch_cfg.get("source_min_interval_h", 12)))
-        keep = int(fetch_cfg.get("detail_pages_per_source", 40))
 
         jobs: list[tuple[str, dict]] = [(sid, cfg) for sid, cfg in p.get("sources", {}).items() if cfg.get("enabled", True)]
         jobs += [(f"watch:{w['name']}", {"adapter": "watch", **w}) for w in p.get("watchlist", [])]
         if only:
             jobs = [j for j in jobs if j[0] == only]
-
+        # Least recently completed first: when the page budget runs out, the
+        # same sources don't wait at the back every time.
         with db.session() as conn:
-            # Phase 1: list every source (embedding model only, for the prefilter).
-            queue: list[tuple[str, list[RawItem]]] = []
-            for sid, cfg in jobs:
-                st = conn.execute("SELECT * FROM source_state WHERE source_id=?", (sid,)).fetchone()
-                if st and st["last_ok"] and not force:
-                    age = datetime.now(timezone.utc) - datetime.fromisoformat(st["last_ok"])
-                    if age < min_interval:
-                        _say(f"{sid}: fetched {int(age.total_seconds() // 3600)} h ago, skipped (use force)")
-                        continue
-                if st and (st["blocked_runs"] or 0) >= 2 and cfg.get("adapter") == "jobspy" and not force:
-                    _say(f"{sid}: auto-disabled after 2 blocked runs")
-                    continue
-                _say(f"{sid}: listing")
-                rep = sources_report[sid] = {"items": 0, "processed": {}, "error": None}
-                try:
-                    if cfg["adapter"] == "watch":
-                        changed, items = watch_check(client, cfg)
-                        rep["changed"] = changed
-                    else:
-                        items = list(ADAPTERS[cfg["adapter"]](client, sid, cfg))
-                    rep["items"] = len(items)
-                    from vs import rules as rules_mod
-                    active = rules_mod.compile_rules(p)
-                    kept = [it for it in items if not rules_mod.reason(it.title, "", sid, active)]
-                    if len(kept) < len(items):
-                        _say(f"{sid}: {len(items) - len(kept)} skipped by your rules (title not in your fields / never-show)")
-                    items = kept
-                    if cfg.get("adapter") in PREFILTER_ADAPTERS or cfg.get("prefilter"):
-                        before = len(items)
-                        items = prefilter(conn, portfolio, items, int(cfg.get("keep", keep)), model)
-                        _say(f"{sid}: {before} listed, {len(items)} new and closest to your work kept")
-                    queue.append((sid, items))
-                    rep["history"] = ((db.row_dict(st)["items_history"] or []) if st else [])[-9:] + [rep["items"]]
-                except Exception as e:
-                    blocked = isinstance(e, Blocked) or "429" in str(e)
-                    rep["error"] = f"{type(e).__name__}: {e}"
-                    _say(f"{sid}: ERROR {rep['error'][:200]}")
-                    conn.execute(
-                        "INSERT INTO source_state(source_id, last_fetch, error, blocked_runs) VALUES(?,?,?,?) "
-                        "ON CONFLICT(source_id) DO UPDATE SET last_fetch=excluded.last_fetch, error=excluded.error, "
-                        "blocked_runs=source_state.blocked_runs + ?",
-                        (sid, db.now(), rep["error"][:500], int(blocked), int(blocked)))
-                conn.commit()
+            last_ok = {r["source_id"]: r["last_ok"] or "" for r in conn.execute("SELECT source_id, last_ok FROM source_state")}
+        jobs.sort(key=lambda j: last_ok.get(j[0], ""))
 
-            # Phase 2: read each new page with the chat model. Only one model is
-            # kept in memory at a time (16 GB RAM).
-            llm.unload(model)
-            total = sum(len(items) for _, items in queue)
-            done = 0
-            for sid, items in queue:
-                rep = sources_report[sid]
-                for it in items:
-                    done += 1
-                    try:
-                        res = process_item(client, conn, it, model)
-                    except llm.LLMError as e:
-                        _say(f"  LLM failed on {it.url}: {e}")
-                        res = "failed"
-                    counts[res] = counts.get(res, 0) + 1
-                    rep["processed"][res] = rep["processed"].get(res, 0) + 1
-                    if res != "unchanged":
-                        label = {"skipped": "not a call", "too_short": "too little text on the page",
-                                 "failed": "could not read"}.get(res, res)
-                        _say(f"  [{done}/{total}] {label}: {it.title[:70]}")
-                    conn.commit()
-                # Only now is the source done: an interrupted run must not make
-                # the next refresh skip it for the minimum interval.
-                conn.execute(
-                    "INSERT INTO source_state(source_id, last_fetch, last_ok, items_last, items_history, error, blocked_runs) "
-                    "VALUES(?,?,?,?,?,NULL,0) ON CONFLICT(source_id) DO UPDATE SET last_fetch=excluded.last_fetch, "
-                    "last_ok=excluded.last_ok, items_last=excluded.items_last, items_history=excluded.items_history, "
-                    "error=NULL, blocked_runs=0",
-                    (sid, db.now(), db.now(), rep["items"], db.dumps(rep.pop("history", []))))
-                conn.commit()
+        phase = time.monotonic()
+        llm.take_stats()
+        llm.embed_options = {"num_gpu": 0}  # embeddings on the CPU: the chat model keeps the GPU
+        run = agents_mod.Run(client=client, portfolio=portfolio, model=model, prefs=p, force=force, rerank=rerank,
+                             say=_say, jobs=jobs)
+        team = agents_mod.build(run)
+        with _lock:
+            _state["agents"] = team
+        _say("Agents at work: " + ", ".join(f"{a.label} ({a.does})" for a in team))
+        for a in team:
+            a.start()
+        for a in team:
+            a.finished.wait()
+        counts, sources_report = run.counts, run.sources
+        if any(a.stopped() for a in team):
+            _say("Stopped: what was read is kept, the rest is read at the next refresh")
+        for purpose, s in llm.take_stats().items():
+            _say(llm.describe_stats(purpose, s))
+        _say(f"Listing, reading and scoring took {_took(phase)}")
 
-            # Phase 3: embed in one batch, merge cross-listed calls, expire, score.
-            _say("Comparing with your portfolio")
-            llm.unload(llm.chat_model())
+        # At the end: embed in one batch, merge cross-listed calls, expire, score.
+        phase = time.monotonic()
+        _say("Comparing with your portfolio")
+        with db.session() as conn:
             counts["duplicate"] += merge_near_duplicates(conn, model)
             from vs import rules as rules_mod
             changes = rules_mod.apply(conn)
             if changes["hidden"] or changes["restored"]:
                 _say(f"Your rules: {len(changes['hidden'])} hidden, {len(changes['restored'])} restored")
             conn.commit()
-            today = date.today().isoformat()
-            counts["expired"] = conn.execute(
-                "UPDATE opportunity SET status='expired' WHERE status='open' AND deadline != '' AND deadline < ?", (today,)).rowcount
+            counts["expired"] = expiry.expire(conn)
             conn.commit()
-            _say("Scoring")
-            score_counts = score_mod().score_all(conn, portfolio, rerank=rerank, progress=_say)
+            _say("Scoring everything again (discovery, explanations gone out of date)")
+            stale = p.get("weights", {}).get("rerank_stale_per_run", 10)
+            score_counts = score_mod().score_all(conn, portfolio, rerank=rerank, progress=_say,
+                                                 stale_limit=None if stale in (None, "") or int(stale) < 0 else int(stale))
             counts.update({f"score_{k}": v for k, v in score_counts.items()})
+        for purpose, s in llm.take_stats().items():
+            _say(llm.describe_stats(purpose, s))
+        _say(f"Comparing and scoring took {_took(phase)}")
 
         from vs.report import write_run_report
         report_path = write_run_report(run_id, counts, sources_report)
+        stopped = _stopping() or any(a.stopped() for a in team)
         with db.session() as conn:
-            conn.execute("UPDATE run SET ended=?, status='done', counts=?, log=?, report_path=? WHERE id=?",
-                         (db.now(), db.dumps({**counts, "sources": sources_report}), "\n".join(_state["lines"]),
-                          str(report_path), run_id))
+            conn.execute("UPDATE run SET ended=?, status=?, counts=?, log=?, report_path=? WHERE id=?",
+                         (db.now(), "stopped" if stopped else "done", db.dumps({**counts, "sources": sources_report}),
+                          "\n".join(_state["lines"]), str(report_path), run_id))
             db.kv_set(conn, "last_refresh", db.now())
         _say(f"Done: {counts['new']} new, {counts['updated']} updated, {counts['expired']} expired")
         return counts
     except Exception as e:
         _say(f"Refresh failed: {e}")
-        with db.session() as conn:
-            conn.execute("UPDATE run SET ended=?, status='failed', log=? WHERE id=?",
-                         (db.now(), "\n".join(_state["lines"]) + "\n" + traceback.format_exc(), run_id))
+        for a in _state.get("agents") or []:
+            a.stop()
+        log = "\n".join(_state["lines"]) + "\n" + traceback.format_exc()
+        for attempt in range(3):  # the failure may itself be a busy database
+            try:
+                with db.session() as conn:
+                    conn.execute("UPDATE run SET ended=?, status='failed', log=? WHERE id=?", (db.now(), log, run_id))
+                break
+            except sqlite3.OperationalError:
+                time.sleep(5 * (attempt + 1))
         raise
     finally:
+        llm.embed_options = {}
         client.close()
         with _lock:
             _state["running"] = False
+            _state["stopping"] = False
 
 
 def score_mod():
@@ -523,12 +565,12 @@ def rescore(rerank: bool = True) -> dict:
     with _lock:
         if _state["running"]:
             raise RuntimeError("A refresh or scoring is already running")
-        _state.update(running=True, lines=[], started=db.now())
+        _state.update(running=True, kind="score", stopping=False, lines=[], started=db.now())
     try:
         _say("Scoring again with your current portfolio, examples and corrections")
         portfolio = portfolio_mod.load()
         with db.session() as conn:
-            conn.execute("UPDATE opportunity SET status='expired' WHERE status='open' AND deadline != '' AND deadline < date('now')")
+            expiry.expire(conn)
             merge_near_duplicates(conn, llm.embed_model())
             from vs import rules as rules_mod
             changes = rules_mod.apply(conn)
@@ -544,6 +586,7 @@ def rescore(rerank: bool = True) -> dict:
     finally:
         with _lock:
             _state["running"] = False
+            _state["stopping"] = False
 
 
 def refresh_in_background(**kwargs) -> bool:
@@ -589,7 +632,7 @@ def add_example(label: str, *, url: str = "", text: str = "", why: str = "", tit
     write_example(ex)
     result = {"example": ex.id, "status": "saved"}
     deadline = data.get("deadline") or ""
-    if data.get("is_opportunity") and (not deadline or deadline >= date.today().isoformat()):
+    if data.get("is_opportunity") and expiry.status_for({**data, "deadline": deadline}) == "open":
         item = RawItem(url=url or f"example://{ex.id}", title=title or data.get("title_en") or ex.id,
                        source_id="example", text=body, needs_detail=False)
         row = build_row(item, data, checks, body, lang)

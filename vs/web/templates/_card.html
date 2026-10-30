@@ -1,42 +1,50 @@
+{# A list card for scanning: what it is on the left, then why it's here;
+   deadline, score and Save always in the same place on the right. #}
 {% set cond = o.conditions or {} %}
 {% set kinds = cond.money_kind or [] %}
 {% set dl = present.days_left(o.deadline) %}
-<article class="card" id="card-{{ o.id }}">
+{% set dl_main, dl_when = present.deadline_parts(o.deadline, o.deadline_kind) %}
+{% set dl_unverified = o.field_confidence and o.field_confidence.deadline and not o.field_confidence.deadline.verified %}
+<article class="card row {{ 'dim' if o.eligibility_flag == 'likely_ineligible' }}" id="card-{{ o.id }}">
   {% if new_since and o.first_seen and o.first_seen > new_since %}<span class="new-dot" title="New since your last visit"></span>{% endif %}
-  <div class="head">
-    <div style="flex:1">
-      <h3><a href="/o/{{ o.id }}">{{ o.title_en or o.title_original }}</a></h3>
-      {% if o.title_original and o.title_original != o.title_en and o.lang_original != 'en' %}<div class="orig">{{ o.title_original }}</div>{% endif %}
-      <div class="org">{{ o.org_name or 'Organisation unclear' }} · {{ present.location(o) }}</div>
+  <div class="what">
+    <h3><a href="/o/{{ o.id }}">{{ o.title_en or o.title_original }}</a></h3>
+    {% if o.title_original and o.title_original != o.title_en and o.lang_original != 'en' %}<div class="orig">{{ o.title_original }}</div>{% endif %}
+    <div class="org">{{ o.org_name or 'Organisation unclear' }} · {{ present.location(o) }}</div>
+    {# a bare keyword list ("Keywords: +concorso") says less than the summary #}
+    {% if o.reasons and not o.reasons[0].startswith('Keywords:') %}<p class="reason">{{ o.reasons[0] }}</p>
+    {% elif o.summary_en %}<p class="reason muted">{{ o.summary_en }}</p>{% endif %}
+    {% if o.discovery_reason %}<div class="small muted">{{ o.discovery_reason }}</div>{% endif %}
+    <div class="chips">
+      {% if tab is not defined or tab.mixed %}<span class="chip type">{{ present.TYPE_LABELS.get(o.type, o.type) }}</span>{% endif %}
+      <span class="chip {{ 'fee' if 'fee_required' in kinds or cond.application_fee else 'money' }}">{{ present.money_badge(cond) }}</span>
+      {% if o.eligibility_flag == 'likely_ineligible' %}<span class="chip bad" title="{{ (o.eligibility_notes or []) | join('; ') }}">Likely ineligible</span>
+      {% elif o.eligibility_flag == 'check' %}<span class="chip warn" title="{{ (o.eligibility_notes or []) | join('; ') }}">Check eligibility</span>{% endif %}
+      {% for p in present.project_chips(o.suggested_projects) %}
+      <span class="chip proj" style="--c: {{ cat_colors.get(p.cat, '#8c8b8a') }}" title="Project to present{{ ': ' ~ p.why if p.why }}">{{ p.label }}</span>
+      {% endfor %}
+      {% if o.app_status %}<span class="chip">{{ o.app_status | replace('_', ' ') | capitalize }}</span>{% endif %}
     </div>
-    <button class="fav {{ 'on' if o.favourite }}" hx-post="/o/{{ o.id }}/fav" hx-vals='{"on": {{ 0 if o.favourite else 1 }}}' hx-swap="outerHTML" title="Favourite">{{ '★' if o.favourite else '☆' }}</button>
   </div>
-  <div class="chips">
-    <span class="chip type">{{ present.TYPE_LABELS.get(o.type, o.type) }}</span>
-    <span class="chip {{ 'closed' if dl is not none and dl < 0 else 'dl-soon' if dl is not none and dl <= 14 }}">{{ present.deadline_label(o.deadline, o.deadline_kind) }}{{ ' · you saved it' if dl is not none and dl < 0 }}{% if o.field_confidence and o.field_confidence.deadline and not o.field_confidence.deadline.verified %} ⚠{% endif %}</span>
-    <span class="chip {{ 'fee' if 'fee_required' in kinds or cond.application_fee else 'money' }}">{{ present.money_badge(cond) }}</span>
-    {% if o.eligibility_flag == 'likely_ineligible' %}<span class="chip bad" title="{{ (o.eligibility_notes or []) | join('; ') }}">Likely ineligible</span>
-    {% elif o.eligibility_flag == 'check' %}<span class="chip warn" title="{{ (o.eligibility_notes or []) | join('; ') }}">Check eligibility</span>{% endif %}
+  <div class="when">
+    <div class="deadline {{ 'closed' if dl is not none and dl < 0 else 'soon' if dl is not none and dl <= 14 }}">
+      <strong>{{ dl_main }}</strong>
+      {% if dl_when %}<span>{{ dl_when }}{% if dl_unverified %} <span class="unverified" title="Deadline not confirmed by the page text">⚠</span>{% endif %}</span>{% endif %}
+      {% if dl is not none and dl < 0 %}<span>you saved it</span>{% endif %}
+    </div>
+    <div class="keep">
+      {% if o.final is none %}<span class="score pending" title="Scored at the end of the refresh">not scored yet</span>
+      {% else %}<span class="score" title="Match score" aria-label="Match score {{ (o.final * 100) | round | int }}">{{ (o.final * 100) | round | int }}</span>{% endif %}
+      {{ present.save_button(o.id, o.favourite) | safe }}
+    </div>
   </div>
-  {% if o.discovery_reason %}<div class="small muted">{{ o.discovery_reason }}</div>{% endif %}
-  {% if o.reasons %}<p class="reason">{{ o.reasons[0] }}</p>{% else %}<p class="reason muted">{{ (o.summary_en or '')[:220] }}</p>{% endif %}
-  {% if o.suggested_projects %}
-  <div class="chips">
-    {% for s in o.suggested_projects[:3] %}{% set parts = s.angle.split(':') %}
-      <span class="chip proj" style="--c: {{ cat_colors.get(parts[1], '#8c8b8a') }}" title="{{ s.why }}">{{ parts[0] | replace('-', ' ') | title }}</span>
-    {% endfor %}
-  </div>
-  {% endif %}
   <div class="foot">
-    {% if o.final is none %}<span class="score" title="Scored at the end of the refresh">not scored yet</span>
-    {% else %}<span class="score" title="Match score">{{ (o.final * 100) | round | int }}</span>{% endif %}
-    {% if o.app_status %}<span class="chip">{{ o.app_status | replace('_', ' ') }}</span>{% endif %}
-    <a class="btn ghost" href="{{ o.canonical_url }}" target="_blank" rel="noopener">Original ↗</a>
-    <details class="dismiss" style="margin-left:auto">
+    <a class="btn ghost" href="{{ o.canonical_url }}" target="_blank" rel="noopener">Open the call ↗</a>
+    <details class="dismiss">
       <summary>Dismiss</summary>
       <div class="reasons">
         {% for val, lab in [('not_my_field','Not my field'),('not_my_taste','Not my taste'),('too_corporate','Too corporate'),('wrong_seniority','Wrong seniority'),('timing','Timing'),('location','Location'),('money','Money'),('ineligible','Not eligible')] %}
-        <button class="btn" hx-post="/o/{{ o.id }}/dismiss" hx-vals='{"reason": "{{ val }}"}' hx-target="#card-{{ o.id }}" hx-swap="outerHTML">{{ lab }}</button>
+        <button class="btn" hx-post="/o/{{ o.id }}/dismiss" hx-vals='{"reason": "{{ val }}"}' hx-target="#card-{{ o.id }}" hx-swap="outerHTML" hx-disabled-elt="this">{{ lab }}</button>
         {% endfor %}
       </div>
     </details>

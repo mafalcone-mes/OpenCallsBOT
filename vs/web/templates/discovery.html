@@ -6,8 +6,8 @@
 {% include "_filters.html" %}
 {% for cluster, rows in groups.items() %}
   <h2>{{ cluster }}</h2>
-  <div class="cards">{% for o in rows %}{% include "_card.html" %}{% endfor %}</div>
+  <div class="cards list">{% for o in rows %}{% include "_card.html" %}{% endfor %}</div>
 {% else %}
-  <div class="empty">Discovery fills in after a refresh with at least a few dozen opportunities.</div>
+  <div class="empty"><h2>Nothing to discover yet</h2><p>Discovery fills in after a refresh with at least a few dozen opportunities.</p><a class="btn primary" href="/feed">Back to the feed</a></div>
 {% endfor %}
 {% endblock %}

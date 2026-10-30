@@ -3,6 +3,7 @@ user state from data/signals.jsonl, taste from data/examples/."""
 
 import json
 import sqlite3
+import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
@@ -122,8 +123,9 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
+def connect(timeout: float = 120) -> sqlite3.Connection:
+    # A writer waits up to 2 minutes for another one to commit before giving up.
+    conn = sqlite3.connect(DB_PATH, timeout=timeout, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
@@ -139,16 +141,50 @@ def _migrate(conn) -> None:
         conn.execute("ALTER TABLE opportunity ADD COLUMN extract_version TEXT")
     if "hidden_reason" not in cols:
         conn.execute("ALTER TABLE opportunity ADD COLUMN hidden_reason TEXT")
+    if "tiebreak" not in {r["name"] for r in conn.execute("PRAGMA table_info(match)")}:
+        conn.execute("ALTER TABLE match ADD COLUMN tiebreak REAL")  # source and region: order only, not the score
+
+
+# Opening the database is slow on Windows while another process writes to it
+# (the file open waits several seconds, likely on the antivirus), so sessions
+# reuse idle connections instead of opening one each time.
+_idle: list[tuple[str, sqlite3.Connection]] = []
+_idle_lock = threading.Lock()
+_IDLE_MAX = 8
+
+
+def _take_idle() -> sqlite3.Connection | None:
+    path = str(DB_PATH)
+    with _idle_lock:
+        for i, (p, conn) in enumerate(_idle):
+            if p == path:
+                return _idle.pop(i)[1]
+    return None
+
+
+def _give_back(conn: sqlite3.Connection) -> None:
+    with _idle_lock:
+        if len(_idle) < _IDLE_MAX:
+            _idle.append((str(DB_PATH), conn))
+            return
+    conn.close()
 
 
 @contextmanager
-def session():
-    conn = connect()
+def session(timeout: float = 120):
+    conn = _take_idle() or connect(timeout)
+    conn.execute(f"PRAGMA busy_timeout={int(timeout * 1000)}")
+    ok = False
     try:
         yield conn
         conn.commit()
+        ok = True
     finally:
-        conn.close()
+        if ok and not conn.in_transaction:
+            _give_back(conn)
+        else:
+            conn.rollback()
+            conn.close()
 
 
 def row_dict(row: sqlite3.Row | None) -> dict | None:

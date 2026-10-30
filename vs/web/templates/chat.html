@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Ask{% endblock %}
+{% block main %}
+{# As in AI chat apps: an empty page with the box in the middle; at the first
+   question the box slides to the bottom and the conversation takes the space. #}
+<div class="ask" id="ask" data-state="empty">
+  <div class="ask-hero">
+    <h1>What are you looking for?</h1>
+    <p class="muted">Opportunities, your saved ones, sources, studios or your projects. Every answer comes from the app's own data.</p>
+  </div>
+
+  <div class="chat" id="thread"></div>
+  <p class="sr-only" id="chat-status" role="status" aria-live="polite"></p>
+
+  <form class="ask-box" id="chat-form" hx-post="/chat/ask" hx-target="#chat-pending" hx-swap="outerHTML">
+    <label for="chat-q" class="sr-only">Your question</label>
+    <textarea id="chat-q" name="q" rows="1" required autocomplete="off" placeholder="Ask anything…"></textarea>
+    <input type="hidden" name="last" id="chat-last" value="">
+    <input type="hidden" name="plan" value="">
+    <button class="ask-send" type="submit" aria-label="Ask" disabled>
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+  </form>
+  <p class="ask-hint small muted">Enter to ask · Shift + Enter for a new line</p>
+
+  <div class="ask-suggest">
+    {% for ex in ["residencies in Italy that close this month", "open calls with the word “paesaggio”", "lavori in Olanda per graphic designer",
+                  "what's close to my projects about photography", "my saved ones", "which sources look at museums?",
+                  "studios in Berlin", "workshops and courses in the next 30 days"] %}
+    <button class="btn" type="button" onclick="ask(this.textContent)">{{ ex }}</button>
+    {% endfor %}
+  </div>
+</div>
+
+<script>
+  const askEl = document.getElementById("ask"), form = document.getElementById("chat-form"),
+        box = document.getElementById("chat-q"), send = form.querySelector(".ask-send"), thread = document.getElementById("thread");
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // The box grows with the text, up to a few lines.
+  function fit() { box.style.height = "auto"; box.style.height = Math.min(box.scrollHeight, 200) + "px"; send.disabled = !box.value.trim(); }
+  box.addEventListener("input", fit);
+  box.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); if (box.value.trim()) htmx.trigger(form, "submit"); }
+  });
+
+  // First question: the box slides from the middle to the bottom (measured
+  // before and after the layout changes, then animated between the two).
+  function toChat() {
+    if (askEl.dataset.state === "chat") return;
+    const before = form.getBoundingClientRect().top;
+    askEl.dataset.state = "chat";
+    const after = form.getBoundingClientRect().top;
+    if (!reduced) form.animate([{ transform: `translateY(${before - after}px)` }, { transform: "none" }],
+                               { duration: 480, easing: "cubic-bezier(.2, .8, .2, 1)" });
+  }
+
+  // Before htmx sends: show the question at once and a "searching" placeholder
+  // that the answer will replace (runs first: capture phase on the document).
+  document.addEventListener("submit", e => {
+    if (e.target !== form || !box.value.trim()) return;
+    toChat();
+    document.getElementById("chat-pending")?.removeAttribute("id");
+    const turn = document.createElement("div");
+    turn.className = "chat-turn";
+    const q = document.createElement("p"); q.className = "chat-q"; q.textContent = box.value.trim();
+    const wait = document.createElement("div"); wait.id = "chat-pending"; wait.className = "chat-a pending";
+    document.getElementById("chat-status").textContent = "Searching…";
+    wait.innerHTML = '<span class="dots"><i></i><i></i><i></i></span>';
+    turn.append(q, wait); thread.append(turn);
+    turn.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "end" });
+  }, true);
+
+  form.addEventListener("htmx:afterRequest", e => {
+    if (e.detail.successful) { box.value = ""; form.plan.value = ""; fit(); box.focus(); }
+    else { const p = document.getElementById("chat-pending"); if (p) { p.className = "chat-a"; p.textContent = "That didn't work. Is the app still running? Try again."; p.removeAttribute("id"); } }
+  });
+  document.body.addEventListener("htmx:afterSwap", () => {
+    const last = thread.lastElementChild;
+    const title = last?.querySelector(".answer h2");
+    if (title) document.getElementById("chat-status").textContent = title.textContent;  // "17 found", not the whole list
+    if (last) last.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
+  });
+
+  // Example and "try …" buttons ask a question (or run a ready plan) through the same box.
+  function ask(text, plan) { box.value = text; form.plan.value = plan || ""; fit(); htmx.trigger(form, "submit"); }
+  function cancelConfirm(btn) {
+    const p = document.createElement("p"); p.className = "chat-done"; p.textContent = "Cancelled: nothing changed.";
+    btn.closest(".chat-confirm").replaceWith(p);
+  }
+  box.focus();
+</script>
+{% endblock %}

@@ -4,42 +4,104 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Opportunities{% endblock %} · vacancies searcher</title>
+<script>
+  // The theme you chose (light / dark), before the page paints; none = follow the system.
+  try { const t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/app.css">
-{% if tokens %}<style>:root { {% for k, v in tokens.items() %}--{{ k }}: {{ v }}; {% endfor %} }</style>{% endif %}
-<script src="/static/htmx.min.js" defer></script>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ static_url('app.css') }}">
+<script src="{{ static_url('htmx.min.js') }}" defer></script>
 </head>
-<body>
-<header class="top">
-  <a class="brand" href="/">Opportunities</a>
-  <nav class="nav">
-    <a href="/" class="{{ 'on' if view == 'feed' }}">Feed</a>
-    <a href="/discovery" class="{{ 'on' if view == 'discovery' }}">Discovery</a>
-    <a href="/calendar" class="{{ 'on' if view == 'calendar' }}">Calendar</a>
-    <a href="/tracker" class="{{ 'on' if view == 'tracker' }}">Applications</a>
-    <a href="/studios" class="{{ 'on' if view == 'studios' }}">Studios</a>
-    <a href="/taste" class="{{ 'on' if view == 'taste' }}">Taste</a>
-    <a href="/sources" class="{{ 'on' if view == 'sources' }}">Sources</a>
+<body class="app">
+<a class="skip" href="#content">Skip to content</a>
+
+{# Side bar, as in AI chat apps: the pages, the calls you opened last, and the refresh state. #}
+<aside class="sidebar" id="sidebar" aria-label="Pages and recent calls">
+  <div class="sb-head">
+    <a class="brand" href="/">Opportunities</a>
+    <button class="btn ghost sb-close" type="button" onclick="toggleSidebar(false)" aria-label="Close the menu">✕</button>
+  </div>
+  <a class="btn sb-new" href="/">+ New question</a>
+  <nav class="sb-nav" aria-label="Main">
+    {% for v, href, label in [('chat', '/', 'Ask'), ('feed', '/feed', 'Feed'), ('discovery', '/discovery', 'Discovery'), ('calendar', '/calendar', 'Calendar'), ('tracker', '/tracker', 'Applications'), ('studios', '/studios', 'Studios'), ('taste', '/taste', 'Taste'), ('sources', '/sources', 'Sources')] %}
+    <a href="{{ href }}" class="{{ 'on' if view == v }}" {{ 'aria-current=page' if view == v }}>{{ label }}</a>
+    {% endfor %}
   </nav>
-  <div class="status">
+  <section class="sb-recent" aria-labelledby="sb-recent-title">
+    <h2 id="sb-recent-title">Recently viewed</h2>
+    {% if recent %}
+    <ul>
+      {% for r in recent %}{% set dl_main, dl_when = present.deadline_parts(r.deadline, r.deadline_kind) %}
+      <li><a href="/o/{{ r.id }}" class="{{ 'on' if o is defined and o.id == r.id }}" title="{{ r.org_name or '' }}">
+        <span class="sb-title">{{ r.title_en or r.title_original }}</span>
+        <span class="sb-meta">{{ dl_main }}</span></a></li>
+      {% endfor %}
+    </ul>
+    {% else %}<p class="small muted">Calls you open appear here.</p>{% endif %}
+  </section>
+  <div class="sb-status">
     {% if deadlines_week %}<a href="/calendar" class="warn">{{ deadlines_week }} tracked deadline{{ 's' if deadlines_week != 1 }} this week</a>{% endif %}
     {% if last_refresh_days is none %}<span class="stale">Never refreshed</span>
     {% elif last_refresh_days >= 7 %}<span class="stale">Last refreshed {{ last_refresh_days }} days ago</span>
     {% else %}<span>Refreshed {{ 'today' if last_refresh_days == 0 else last_refresh_days ~ ' day' ~ ('s' if last_refresh_days > 1 else '') ~ ' ago' }}</span>{% endif %}
-    <form method="post" action="/refresh"><button class="btn {{ 'primary' if not progress.running }}" {{ 'disabled' if progress.running }}>{{ 'Refreshing…' if progress.running else 'Refresh' }}</button></form>
+    <div class="sb-actions">
+      <form method="post" action="/refresh"><button class="btn" {{ 'disabled' if progress.running }}>{{ 'Refreshing…' if progress.running else 'Refresh' }}</button></form>
+      {% if progress.running and progress.kind == 'refresh' %}<form method="post" action="/stop"><button class="btn" {{ 'disabled' if progress.stopping }}>{{ 'Stopping…' if progress.stopping else 'Stop' }}</button></form>{% endif %}
+    </div>
+    <div class="theme-switch" role="group" aria-label="Theme">
+      {% for v, label in [('light', 'Light'), ('dark', 'Dark'), ('', 'System')] %}
+      <button type="button" class="btn" data-theme-choice="{{ v }}" onclick="setTheme('{{ v }}')" aria-pressed="false">{{ label }}</button>
+      {% endfor %}
+    </div>
   </div>
-</header>
-{% if progress.running %}
-<div hx-get="/progress" hx-trigger="every 3s" hx-swap="innerHTML" style="padding: 0 32px">{% include "_progress.html" %}</div>
-{% endif %}
-<main>
-{% if portfolio is not none and portfolio.__class__.__name__ != 'Portfolio' %}
-  <div class="notice">Could not read the portfolio website: {{ portfolio }}</div>
-{% endif %}
-{% if prefs_error %}<div class="notice">{{ prefs_error }}</div>{% endif %}
-{% if sheet_error %}<div class="notice">Sources sheet: {{ sheet_error }}</div>{% endif %}
-{% block main %}{% endblock %}
-</main>
+</aside>
+<div class="sb-backdrop" onclick="toggleSidebar(false)" hidden></div>
+
+<div class="page">
+  <header class="mobile-bar">
+    <button class="btn" type="button" onclick="toggleSidebar(true)" aria-controls="sidebar" aria-expanded="false" id="sb-open">Menu</button>
+    <a class="brand" href="/">Opportunities</a>
+  </header>
+  {% if progress.running %}
+  <div class="page-progress" hx-get="/progress" hx-trigger="every 3s" hx-swap="innerHTML">{% include "_progress.html" %}</div>
+  {% endif %}
+  <main id="content" tabindex="-1">
+  {% if portfolio is not none and portfolio.__class__.__name__ != 'Portfolio' %}
+    <div class="notice">Could not read the portfolio website: {{ portfolio }}</div>
+  {% endif %}
+  {% if prefs_error %}<div class="notice">{{ prefs_error }}</div>{% endif %}
+  {% if sheet_error %}<div class="notice">Sources sheet: {{ sheet_error }}</div>{% endif %}
+  {% block main %}{% endblock %}
+  </main>
+</div>
+
+<div class="toast" id="toast" role="alert" hidden></div>
+<script>
+  // A click that fails (app restarting, database busy) says so instead of doing nothing.
+  document.addEventListener("htmx:responseError", e => showToast("That didn't work (" + e.detail.xhr.status + "). Try again in a moment."));
+  document.addEventListener("htmx:sendError", () => showToast("The app isn't answering. Is it still running?"));
+  function showToast(msg) {
+    const t = document.getElementById("toast");
+    t.textContent = msg; t.hidden = false;
+    clearTimeout(t._timer); t._timer = setTimeout(() => { t.hidden = true; }, 6000);
+  }
+  // Phone and tablet: the side bar slides in over the page.
+  function toggleSidebar(open) {
+    document.body.classList.toggle("sb-open", open);
+    document.querySelector(".sb-backdrop").hidden = !open;
+    document.getElementById("sb-open").setAttribute("aria-expanded", open);
+    if (open) document.querySelector(".sb-nav a")?.focus();
+  }
+  // Light / Dark / System, remembered in this browser.
+  function setTheme(v) {
+    if (v) document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme;
+    try { v ? localStorage.setItem("theme", v) : localStorage.removeItem("theme"); } catch (e) {}
+    document.querySelectorAll("[data-theme-choice]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.themeChoice === v)));
+  }
+  setTheme(document.documentElement.dataset.theme || "");
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && document.body.classList.contains("sb-open")) toggleSidebar(false); });
+</script>
 </body>
 </html>

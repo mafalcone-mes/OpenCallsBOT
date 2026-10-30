@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import calendar as cal_mod
+import json
+import os
 import sqlite3
 import threading
 from datetime import date, timedelta
+from html import escape as html_escape
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -14,13 +17,14 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from vs import db, llm, pipeline, present, references
+from vs import db, expiry, llm, pipeline, present, references
 from vs import portfolio as portfolio_mod
 from vs import config
 from vs.config import prefs, update_prefs
 from vs.examples import list_examples, log_signal, remove_example, taste_signals
 from vs.ics import to_ics
-from vs.report import feed_rows
+from vs import report
+from vs.report import feed_counts, feed_rows
 
 HERE = Path(__file__).parent
 app = FastAPI(title="vacancies searcher")
@@ -28,10 +32,19 @@ app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.globals.update(present=present)
 
-STATUSES = ["shortlisted", "preparing", "submitted", "selected", "rejected", "no_answer"]
-DISMISS_REASONS = [("not_my_field", "Not my field"), ("not_my_taste", "Not my taste"), ("too_corporate", "Too corporate"),
-                   ("wrong_seniority", "Wrong seniority"), ("timing", "Bad timing"), ("location", "Location"),
-                   ("money", "Money"), ("ineligible", "Not eligible"), ("duplicate", "Duplicate")]
+
+def static_url(name: str) -> str:
+    """/static/<name>?v=<last change>, so browsers drop their saved copy after an update."""
+    try:
+        return f"/static/{name}?v={int((HERE / 'static' / name).stat().st_mtime)}"
+    except OSError:
+        return f"/static/{name}"
+
+
+templates.env.globals.update(static_url=static_url)
+
+STATUSES = present.STATUSES
+DISMISS_REASONS = present.DISMISS_REASONS
 _brief_jobs: dict[int, dict] = {}
 
 
@@ -51,6 +64,7 @@ def ctx(request: Request, **kw) -> dict:
             "SELECT COUNT(*) c FROM opportunity o JOIN user_state u ON u.opportunity_key=o.dedup_key "
             "WHERE o.status='open' AND (u.favourite=1 OR u.app_status IS NOT NULL) AND o.deadline != '' "
             "AND o.deadline BETWEEN date('now') AND date('now', '+7 day')").fetchone()["c"]
+        recent = _recent(conn)
     days = None
     if last:
         days = (date.today() - date.fromisoformat(last[:10])).days
@@ -58,8 +72,30 @@ def ctx(request: Request, **kw) -> dict:
     labels = {c.id: c.label for c in p.categories} if not isinstance(p, Exception) else {}
     tokens = p.css_tokens if not isinstance(p, Exception) else {}
     return {"request": request, "portfolio": p, "last_refresh_days": days, "deadlines_week": soon,
-            "last_visit": last_visit, "cat_colors": colors, "cat_labels": labels, "tokens": tokens,
+            "last_visit": last_visit, "recent": recent, "cat_colors": colors, "cat_labels": labels, "tokens": tokens,
             "progress": pipeline.progress_state(), "prefs_error": config.prefs_error, "sheet_error": prefs().get("_sheet_error"), **kw}
+
+
+RECENT_MAX = 12
+
+
+def _recent(conn) -> list[dict]:
+    """The calls you opened last, newest first, for the side bar."""
+    ids = db.kv_get(conn, "recent_views") or []
+    if not ids:
+        return []
+    rows = {r["id"]: db.row_dict(r) for r in conn.execute(
+        f"SELECT id, title_en, title_original, org_name, deadline, deadline_kind FROM opportunity WHERE id IN ({','.join('?' * len(ids))})", ids)}
+    return [rows[i] for i in ids if i in rows]
+
+
+def _remember_view(oid: int) -> None:
+    try:
+        with db.session() as conn:
+            ids = [oid] + [i for i in (db.kv_get(conn, "recent_views") or []) if i != oid]
+            db.kv_set(conn, "recent_views", ids[:RECENT_MAX])
+    except sqlite3.OperationalError:
+        pass  # a busy database never fails the page
 
 
 def _mark_visit() -> None:
@@ -74,48 +110,8 @@ def _mark_visit() -> None:
 
 # ---------------------------------------------------------------- filters
 
-FILTERS = ["type", "region", "remote", "money", "nofee", "housing", "within", "lang", "elig", "source", "status", "min", "q"]
-
-
-def _where(f: dict) -> tuple[str, list]:
-    where, params = [], []
-    if f.get("type"):
-        where.append("o.type = ?"); params.append(f["type"])
-    if f.get("region"):
-        where.append("o.region = ?"); params.append(f["region"])
-    if f.get("remote"):
-        where.append("o.remote_mode IN ('remote','online')" if f["remote"] == "yes" else "o.remote_mode NOT IN ('remote','online')")
-    if f.get("money"):
-        where.append("EXISTS (SELECT 1 FROM json_each(o.conditions, '$.money_kind') WHERE value = ?)")
-        params.append(f["money"])
-    if f.get("nofee"):
-        where.append("NOT EXISTS (SELECT 1 FROM json_each(o.conditions, '$.money_kind') WHERE value = 'fee_required') "
-                     "AND COALESCE(json_extract(o.conditions, '$.application_fee'), 0) = 0")
-    if f.get("housing"):
-        where.append("EXISTS (SELECT 1 FROM json_each(o.conditions, '$.covers') WHERE value = 'housing')")
-    if f.get("within"):
-        where.append("o.deadline != '' AND o.deadline <= date('now', ?)"); params.append(f"+{int(f['within'])} day")
-    if f.get("lang"):
-        where.append("EXISTS (SELECT 1 FROM json_each(o.application_languages) WHERE lower(value) = ?)")
-        params.append(f["lang"])
-    if f.get("elig"):
-        where.append("m.eligibility_flag = ?"); params.append(f["elig"])
-    if f.get("source"):
-        where.append("o.source_id = ?"); params.append(f["source"])
-    if f.get("status") == "favourite":
-        where.append("u.favourite = 1")
-    elif f.get("status") == "dismissed":
-        where.append("u.dismissed = 1")
-    elif f.get("status") == "tracked":
-        where.append("u.app_status IS NOT NULL")
-    if f.get("status") != "dismissed":
-        where.append("COALESCE(u.dismissed, 0) = 0")
-    if f.get("min"):
-        where.append("m.final >= ?"); params.append(float(f["min"]) / 100)
-    if f.get("q"):
-        where.append("(o.title_en LIKE ? OR o.org_name LIKE ? OR o.summary_en LIKE ?)")
-        params += [f"%{f['q']}%"] * 3
-    return (" AND " + " AND ".join(where)) if where else "", params
+FILTERS = report.FILTERS
+_where = report.filter_sql
 
 
 def _filters(request: Request) -> dict:
@@ -132,18 +128,179 @@ def _options(conn) -> dict:
 
 # ---------------------------------------------------------------- pages
 
+def _group_where(gid: str) -> tuple[str, list]:
+    """SQL for one feed tab (see present.FEED_GROUPS)."""
+    for g, _, types in present.FEED_GROUPS:
+        if g == gid and types:
+            return f" AND o.type IN ({','.join('?' * len(types))})", list(types)
+    listed = [t for _, _, types in present.FEED_GROUPS for t in types]
+    return f" AND COALESCE(o.type, '') NOT IN ({','.join('?' * len(listed))})", listed
+
+
+def _last_batch(conn) -> str:
+    """Start of the last finished refresh: what it found is 'new' until the next one."""
+    row = conn.execute("SELECT started FROM run WHERE status = 'done' ORDER BY id DESC LIMIT 1").fetchone()
+    return row["started"] if row else ""
+
+
+def _feed_tabs(conn, where: str, params: list, since: str = "") -> list[dict]:
+    counts = feed_counts(conn, where + " AND COALESCE(m.bucket, 'feed') = 'feed'", tuple(params))
+    new = feed_counts(conn, where + " AND COALESCE(m.bucket, 'feed') = 'feed' AND o.first_seen >= ?",
+                      tuple(params + [since])) if since else {}
+    tabs = []
+    for gid, label, types in present.FEED_GROUPS:
+        def total(c: dict, key: str) -> int:
+            return sum(v[key] for t, v in c.items() if present.feed_group_of(t or None) == gid)
+        # mixed tabs label each row with its type; single-type tabs don't need to
+        tabs.append({"id": gid, "label": label, "n": total(counts, "n"), "bad": total(counts, "bad"),
+                     "new": total(new, "n"), "mixed": len(types) != 1})
+    return tabs
+
+
 @app.get("/", response_class=HTMLResponse)
+def home(request: Request):
+    """The chat: ask the app about its opportunities, sources, studios and
+    your portfolio (vs/chat.py)."""
+    return templates.TemplateResponse(request, "chat.html", ctx(request, view="chat"))
+
+
+@app.post("/chat/ask", response_class=HTMLResponse)
+def chat_ask(request: Request, q: str = Form(""), last: str = Form(""), plan: str = Form("")):
+    from vs import chat
+    p = _portfolio()
+    ids = [int(x) for x in last.split(",") if x.strip().isdigit()]
+    given = None
+    if plan:
+        try:
+            given = {**chat.EMPTY_PLAN, **json.loads(plan)}
+        except ValueError:
+            given = None
+    with db.session() as conn:
+        a, plan_json = chat.answer(conn, q, p if not isinstance(p, Exception) else None, ids, plan=given)
+    shown = [r["id"] for r in a.rows] if a.kind == "opportunities" else ids
+    return templates.TemplateResponse(request, "_chat_answer.html", ctx(
+        request, q=q or "", a=a, plan_json=plan_json, shown=",".join(str(i) for i in shown), new_since=""))
+
+
+@app.post("/chat/do", response_class=HTMLResponse)
+def chat_do(request: Request, payload: str = Form("{}")):
+    from vs import chat
+    try:
+        done = chat.do(json.loads(payload))
+    except (ValueError, TypeError):
+        done = "That didn't work: nothing was changed."
+    return HTMLResponse(f'<p class="chat-done" role="status">{html_escape(done)}</p>')
+
+
+@app.get("/feed", response_class=HTMLResponse)
 def feed(request: Request):
     f = _filters(request)
+    f.pop("type", None)  # the tabs replace the type filter on this page
     where, params = _where(f)
+    only_new = request.query_params.get("new") == "1"
     with db.session() as conn:
+        expiry.expire(conn)  # events whose dates passed since the last refresh
         prev_visit = db.kv_get(conn, "last_visit") or ""
-        rows = feed_rows(conn, where + " AND COALESCE(m.bucket, 'feed') = 'feed'", tuple(params), 200)
+        since = _last_batch(conn)
+        tabs = _feed_tabs(conn, where, params, since)
+        # Open the tab asked for; otherwise the first one with something in it.
+        key = "new" if only_new else "n"
+        gid = request.query_params.get("g", "")
+        if gid not in {t["id"] for t in tabs}:
+            gid = next((t["id"] for t in tabs if t[key]), tabs[0]["id"])
+        tab = next(t for t in tabs if t["id"] == gid)
+        gw, gp = _group_where(gid)
+        base = where + gw + " AND COALESCE(m.bucket, 'feed') = 'feed'"
+        # While a refresh runs, what it scores appears on top, one by one.
+        live = _live_since()
+        live_rows = _live_rows(conn, base, params + gp, live) if live else []
+        if live:
+            base, gp = base + " AND o.first_seen < ?", gp + [live]
+        # What the last refresh found goes in its own area on top; the rest below.
+        new_rows = feed_rows(conn, base + " AND o.first_seen >= ?", tuple(params + gp + [since]),
+                             present.FEED_PAGE) if since and tab["new"] else []
+        rows, total = [], 0
+        if not only_new:
+            older = " AND o.first_seen < ?" if new_rows else ""
+            rows = feed_rows(conn, base + older, tuple(params + gp + ([since] if new_rows else [])), present.FEED_PAGE)
+            total = tab["n"] - tab["new"] if new_rows else tab["n"]
         opts = _options(conn)
         hidden_count = conn.execute("SELECT COUNT(*) FROM opportunity WHERE status = 'hidden'").fetchone()[0]
+        loosen = _loosen(conn, f, gid, since, only_new) if f and not tab[key] else []
     _mark_visit()
-    return templates.TemplateResponse(request, "feed.html", ctx(request, rows=rows, f=f, opts=opts, view="feed", hidden_count=hidden_count,
-                                                       new_since=prev_visit, qs=urlencode(f)))
+    return templates.TemplateResponse(request, "feed.html", ctx(
+        request, rows=rows, new_rows=new_rows, live_rows=live_rows, live=live, only_new=only_new, since=since,
+        total=total, older=bool(new_rows), loosen=loosen,
+        f=f, opts=opts, view="feed", hidden_count=hidden_count, new_since=prev_visit,
+        qs=urlencode(f), tabs=tabs, tab=tab, offset=0, next_offset=len(rows), prev_far=False))
+
+
+FILTER_NAMES = {"q": "your search", "region": "the region filter", "within": "the deadline filter", "elig": "the eligibility filter",
+                "remote": "the on site / remote filter", "money": "the money filter", "lang": "the language filter",
+                "source": "the source filter", "status": "the status filter", "nofee": "“No fee”", "housing": "“Housing covered”", "min": "the score filter"}
+
+
+def _loosen(conn, f: dict, gid: str, since: str, only_new: bool) -> list[tuple[str, int, str]]:
+    """When the filters leave a tab empty: for each filter, how many there
+    would be without it, so the empty page can offer that as one click."""
+    out = []
+    for k in f:
+        rest = {kk: v for kk, v in f.items() if kk != k}
+        where, params = _where(rest)
+        tab = next((t for t in _feed_tabs(conn, where, params, since) if t["id"] == gid), None)
+        n = (tab["new"] if only_new else tab["n"]) if tab else 0
+        if n:
+            out.append((f"Remove {FILTER_NAMES.get(k, k)}", n, urlencode(rest | {"g": gid} | ({"new": "1"} if only_new else {}))))
+    return sorted(out, key=lambda x: -x[1])
+
+
+def _live_since() -> str:
+    """Start of the running refresh ('' when none runs)."""
+    st = pipeline.progress_state()
+    return st["started"] if st["running"] and st["kind"] == "refresh" else ""
+
+
+def _live_rows(conn, base: str, params: list, live: str) -> list[dict]:
+    # Only what already has its score: each one appears when the Scorer is done with it.
+    return feed_rows(conn, base + " AND o.first_seen >= ? AND m.final IS NOT NULL", tuple(params + [live]), 60)
+
+
+@app.get("/feed/live", response_class=HTMLResponse)
+def feed_live(request: Request, g: str):
+    """The 'Arriving now' area, polled while a refresh runs."""
+    f = _filters(request)
+    f.pop("type", None)
+    where, params = _where(f)
+    gw, gp = _group_where(g)
+    live = _live_since() or request.query_params.get("since", "")
+    with db.session() as conn:
+        rows = _live_rows(conn, where + gw + " AND COALESCE(m.bucket, 'feed') = 'feed'", params + gp, live) if live else []
+    return templates.TemplateResponse(request, "_live.html", ctx(
+        request, live_rows=rows, live=live, running=bool(_live_since()), qs=urlencode(f), tab={"id": g}, new_since=""))
+
+
+@app.get("/feed/more", response_class=HTMLResponse)
+def feed_more(request: Request, g: str, offset: int = 0, older: int = 0):
+    """The next page of one feed tab, appended in place of the 'Show more' button.
+    older=1: only what the last refresh did not find (the new ones are above)."""
+    f = _filters(request)
+    f.pop("type", None)
+    where, params = _where(f)
+    gw, gp = _group_where(g)
+    with db.session() as conn:
+        prev_visit = db.kv_get(conn, "prev_visit") or ""  # the feed already moved last_visit on
+        since = _last_batch(conn) if older else ""
+        tab = next(t for t in _feed_tabs(conn, where, params, since) if t["id"] == g)
+        extra, extra_p = (" AND o.first_seen < ?", [since]) if since else ("", [])
+        q, qp = where + gw + " AND COALESCE(m.bucket, 'feed') = 'feed'" + extra, tuple(params + gp + extra_p)
+        rows = feed_rows(conn, q, qp, present.FEED_PAGE, max(0, offset))
+        # The "far from your work" divider goes where the scores cross the line, also between pages.
+        before = feed_rows(conn, q, qp, 1, offset - 1) if offset > 0 else []
+        prev_far = bool(before) and before[0]["final"] is not None and before[0]["final"] < present.far_below()
+    total = tab["n"] - tab["new"] if since else tab["n"]
+    return templates.TemplateResponse(request, "_feed_page.html", ctx(
+        request, rows=rows, f=f, qs=urlencode(f), tab=tab, new_since=prev_visit, total=total, older=bool(since),
+        offset=offset, next_offset=offset + len(rows), prev_far=prev_far))
 
 
 @app.get("/discovery", response_class=HTMLResponse)
@@ -160,6 +317,30 @@ def discovery(request: Request):
                                                             new_since="", qs=urlencode(f)))
 
 
+def _similar_titles(conn, o: dict) -> list[tuple[str, str]]:
+    """(ref, title) for 'Similar to …': titles only, never internal keys. A
+    starred opportunity ('opp:<key>') is looked up; the item itself, repeats
+    and refs whose title can't be found are left out."""
+    from vs.score import example_title
+    own = {o.get("dedup_key"), o.get("canonical_url")}
+    out, seen = [], set()
+    for ref in o.get("similar_examples") or []:
+        if ref.startswith("opp:"):
+            key = ref[4:]
+            if key in own:
+                continue
+            row = conn.execute("SELECT title_en, title_original FROM opportunity WHERE dedup_key=? OR canonical_url=?", (key, key)).fetchone()
+            title = (row["title_en"] or row["title_original"]) if row else ""
+        else:
+            title = example_title(ref)
+            if title == ref:
+                title = ""
+        if title and title not in seen and title != (o.get("title_en") or o.get("title_original")):
+            seen.add(title)
+            out.append((ref, title))
+    return out
+
+
 @app.get("/o/{oid}", response_class=HTMLResponse)
 def detail(request: Request, oid: int):
     with db.session() as conn:
@@ -170,9 +351,9 @@ def detail(request: Request, oid: int):
                 raise HTTPException(404)
             rows = [o]
         brief = db.kv_get(conn, f"brief:{oid}")
-    o = rows[0]
-    from vs.score import example_title
-    similar = [(ref, example_title(ref)) for ref in (o.get("similar_examples") or [])]
+        o = rows[0]
+        similar = _similar_titles(conn, o)
+    _remember_view(oid)
     return templates.TemplateResponse(request, "detail.html", ctx(request, o=o, similar=similar, brief=brief, view="detail",
                                                          statuses=STATUSES, reasons=DISMISS_REASONS,
                                                          brief_job=_brief_jobs.get(oid)))
@@ -363,20 +544,26 @@ def fav(request: Request, oid: int, on: int = Form(1)):
     key = _key(oid)
     log_signal("favourite" if on else "unfavourite", key=key)
     if request.headers.get("hx-request"):
-        return HTMLResponse(_fav_button(oid, bool(on)))
+        return HTMLResponse(present.save_button(oid, bool(on)))
     return RedirectResponse(_back(request), 303)
-
-
-def _fav_button(oid: int, on: bool) -> str:
-    return (f'<button class="fav {"on" if on else ""}" hx-post="/o/{oid}/fav" hx-vals=\'{{"on": {0 if on else 1}}}\' '
-            f'hx-swap="outerHTML" title="{"Remove favourite" if on else "Favourite"}">{"★" if on else "☆"}</button>')
 
 
 @app.post("/o/{oid}/dismiss")
 def dismiss(request: Request, oid: int, reason: str = Form("other"), undo: int = Form(0)):
     log_signal("undismiss" if undo else "dismiss", key=_key(oid), reason=reason)
     if request.headers.get("hx-request"):
-        return HTMLResponse("" if not undo else "<p>Restored.</p>")
+        if undo:  # the card comes back where it was
+            with db.session() as conn:
+                rows = feed_rows(conn, "AND o.id = ?", (oid,), 1)
+            if rows:
+                return templates.TemplateResponse(request, "_card.html", ctx(request, o=rows[0], new_since=""))
+            return HTMLResponse("<p class='small muted'>Restored: it is back in the feed.</p>")
+        reason = reason if reason in dict(DISMISS_REASONS) else "other"
+        label = dict(DISMISS_REASONS).get(reason, "Other")
+        return HTMLResponse(
+            f'<article class="card gone" id="card-{oid}" aria-live="polite"><p>Dismissed: {label}. The feed learns from it.</p>'
+            f'<button class="btn" hx-post="/o/{oid}/dismiss" hx-vals=\'{{"undo": 1, "reason": "{reason}"}}\' '
+            f'hx-target="#card-{oid}" hx-swap="outerHTML" hx-disabled-elt="this">Undo</button></article>')
     return RedirectResponse(_back(request), 303)
 
 
@@ -434,6 +621,39 @@ def brief_status(request: Request, oid: int):
 def refresh(request: Request, force: int = Form(0), source: str = Form("")):
     pipeline.refresh_in_background(force=bool(force), only=source or None)
     return RedirectResponse(_back(request, "/sources"), 303)
+
+
+@app.post("/stop")
+def stop(request: Request):
+    pipeline.request_stop()
+    return RedirectResponse(_back(request, "/"), 303)
+
+
+@app.post("/agents/{name}/stop")
+def stop_agent(request: Request, name: str):
+    """Stop one agent of the running refresh (from the progress panel)."""
+    pipeline.stop_agent(name)
+    return HTMLResponse("")
+
+
+RESTARTING_PAGE = """<!doctype html><meta charset="utf-8"><title>Restarting</title>
+<body style="font:15px system-ui;padding:40px;background:#f7f7f4;color:#1d1d1b">
+<p>Restarting the app&hellip; this page reloads by itself.</p>
+<script>
+setTimeout(function poll() {
+  fetch("/progress", {cache: "no-store"}).then(r => r.ok ? location.replace("/") : setTimeout(poll, 1000))
+    .catch(() => setTimeout(poll, 1000));
+}, 2500);
+</script></body>"""
+
+
+@app.post("/restart", response_class=HTMLResponse)
+def restart(request: Request):
+    """Exit so `vs serve` starts the dashboard again with the current code.
+    A running refresh stops; what it read is saved and the next refresh continues."""
+    from vs.cli import RESTART_CODE
+    threading.Timer(1.0, lambda: os._exit(RESTART_CODE)).start()  # after this page is sent
+    return HTMLResponse(RESTARTING_PAGE)
 
 
 @app.post("/rescore")

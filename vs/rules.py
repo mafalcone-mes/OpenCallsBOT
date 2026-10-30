@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 
-from vs import db
+from vs import expiry
 from vs.config import prefs
 from vs.score import _kw_regex
 
@@ -50,7 +50,8 @@ def apply(conn, *, dry_run: bool = False) -> dict:
     saved = {r["opportunity_key"] for r in conn.execute(
         "SELECT opportunity_key FROM user_state WHERE favourite = 1 OR app_status IS NOT NULL")}
     rows = conn.execute(
-        "SELECT id, dedup_key, source_id, title_en, title_original, field_tag, status, deadline, hidden_reason "
+        "SELECT id, dedup_key, source_id, title_en, title_original, field_tag, status, deadline, hidden_reason, "
+        "type, deadline_kind, start_date, other_dates "
         "FROM opportunity WHERE extraction_status = 'done' AND status IN ('open', 'expired', 'hidden')").fetchall()
     hidden, restored = [], []
     for r in rows:
@@ -63,6 +64,6 @@ def apply(conn, *, dry_run: bool = False) -> dict:
         elif not why and r["status"] == "hidden":
             restored.append((r["source_id"], r["title_en"] or r["title_original"], r["hidden_reason"]))
             if not dry_run:
-                status = "expired" if r["deadline"] and r["deadline"] < db.now()[:10] else "open"
+                status = expiry.status_for(dict(r))
                 conn.execute("UPDATE opportunity SET status = ?, hidden_reason = NULL WHERE id = ?", (status, r["id"]))
     return {"hidden": hidden, "restored": restored}

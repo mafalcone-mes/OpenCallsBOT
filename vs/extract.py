@@ -21,6 +21,10 @@ DOC_KINDS = ["cv", "portfolio", "motivation_letter", "project_proposal", "budget
              "work_samples", "video", "id_document", "diploma", "writing_sample", "other"]
 
 _str = {"type": "string"}
+# Hard caps on free text: without them the model can start copying the whole
+# page into a quote and run until the context is full (minutes per page).
+_quote = {"type": "string", "maxLength": 250}
+_short = {"type": "string", "maxLength": 200}
 _num_or_null = {"type": ["number", "null"]}
 
 EXTRACT_VERSION = "2"  # bump when SYSTEM changes: rejected items are read again
@@ -30,16 +34,16 @@ SCHEMA = {
     "properties": {
         "is_opportunity": {"type": "boolean"},
         "type": {"type": "string", "enum": TYPES},
-        "title_en": _str,
-        "org_name": _str,
-        "summary_en": _str,
-        "field_tag": _str,
+        "title_en": _short,
+        "org_name": _short,
+        "summary_en": {"type": "string", "maxLength": 700},
+        "field_tag": _short,
         "location_city": _str,
         "location_country": _str,
         "remote_mode": {"type": "string", "enum": ["onsite", "hybrid", "remote", "online", "unknown"]},
         "deadline": _str,
         "deadline_kind": {"type": "string", "enum": ["fixed", "rolling", "unknown"]},
-        "deadline_evidence": _str,
+        "deadline_evidence": _quote,
         "start_date": _str,
         "duration_text": _str,
         "money_kind": {"type": "array", "items": {"type": "string", "enum": MONEY_KINDS}},
@@ -48,18 +52,18 @@ SCHEMA = {
         "amount_period": _str,
         "covers": {"type": "array", "items": {"type": "string", "enum": COVERS}},
         "application_fee": _num_or_null,
-        "money_evidence": _str,
+        "money_evidence": _quote,
         "age_min": {"type": ["integer", "null"]},
         "age_max": {"type": ["integer", "null"]},
         "nationalities": {"type": "array", "items": _str},
         "residence": {"type": "array", "items": _str},
         "education": _str,
         "career_stage": _str,
-        "eligibility_evidence": _str,
+        "eligibility_evidence": _quote,
         "application_languages": {"type": "array", "items": _str},
         "required_docs": {"type": "array", "items": {
             "type": "object",
-            "properties": {"kind": {"type": "string", "enum": DOC_KINDS}, "details": _str, "required": {"type": "boolean"}},
+            "properties": {"kind": {"type": "string", "enum": DOC_KINDS}, "details": _short, "required": {"type": "boolean"}},
             "required": ["kind", "details", "required"]}},
         "submission_method": {"type": "string", "enum": ["email", "form", "platform", "post", "unknown"]},
         "submission_url": _str,
@@ -96,11 +100,31 @@ Rules:
 - field_tag: 2 to 5 words naming the field (e.g. "exhibition design", "investigative journalism", "biophysics")."""
 
 
+# Two steps: a short answer first (is this a call at all?), the rest only for
+# calls. Writing the answer is most of the time per page, and both steps send
+# the same messages so Ollama reuses the page it has already read.
+FIRST_FIELDS = ["is_opportunity", "type", "title_en", "org_name", "deadline", "deadline_kind", "deadline_evidence"]
+
+
+def _part(fields: list[str]) -> dict:
+    return {"type": "object", "properties": {k: SCHEMA["properties"][k] for k in fields}, "required": fields}
+
+
+FIRST_SCHEMA = _part(FIRST_FIELDS)
+REST_SCHEMA = _part([k for k in SCHEMA["required"] if k not in FIRST_FIELDS])
+MAX_TEXT = 12000
+
+
 def extract(text: str, *, title: str = "", url: str = "", lang: str = "", today: date | None = None) -> dict:
     today = today or date.today()
     user = (f"Today is {today.isoformat()}.\nURL: {url}\nListing title: {title}\nDetected language: {lang or 'unknown'}\n\n"
-            f"--- PAGE TEXT ---\n{text[:12000]}")
-    return llm.chat_json(SYSTEM, user, SCHEMA)
+            f"--- PAGE TEXT ---\n{text[:MAX_TEXT]}")
+    model = llm.extract_model()
+    data = llm.chat_json(SYSTEM, user, FIRST_SCHEMA, model=model, max_tokens=1000, purpose="extract: is it a call")
+    if not data.get("is_opportunity", True):
+        return data
+    data.update(llm.chat_json(SYSTEM, user, REST_SCHEMA, model=model, max_tokens=2000, purpose="extract: details"))
+    return data
 
 
 # ---------------------------------------------------------------- checks

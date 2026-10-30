@@ -30,6 +30,9 @@ def ensure(conn, kind: str, items: dict[str, str], model: str) -> dict[str, np.n
         for (key, _, h), vec in zip(todo, vecs):
             db.put_vec(conn, kind, key, model, h, vec)
             out[key] = vec
+        # Commit now: the caller's next step is often another model call, and an
+        # open write would lock every other part of the app while it runs.
+        conn.commit()
     return out
 
 

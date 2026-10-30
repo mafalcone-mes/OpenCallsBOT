@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 import webbrowser
+
+RESTART_CODE = 3  # the dashboard exits with this to be started again (Restart button)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -16,6 +19,7 @@ def main(argv: list[str] | None = None) -> None:
     s = sub.add_parser("serve", help="Open the dashboard")
     s.add_argument("--port", type=int, default=8765)
     s.add_argument("--no-browser", action="store_true")
+    s.add_argument("--child", action="store_true", help=argparse.SUPPRESS)
 
     r = sub.add_parser("refresh", help="Fetch sources, extract, score")
     r.add_argument("--force", action="store_true", help="Ignore the per-source minimum interval")
@@ -38,11 +42,11 @@ def main(argv: list[str] | None = None) -> None:
 
     args = ap.parse_args(argv)
 
-    if args.cmd == "serve":
+    if args.cmd == "serve" and args.child:
         import uvicorn
-        if not args.no_browser:
-            webbrowser.open(f"http://127.0.0.1:{args.port}/")
         uvicorn.run("vs.web.app:app", host="127.0.0.1", port=args.port, log_level="warning")
+    elif args.cmd == "serve":
+        serve(args.port, browser=not args.no_browser)
     elif args.cmd == "refresh":
         from vs.pipeline import refresh
         print(json.dumps(refresh(force=args.force, only=args.source, rerank=not args.no_rerank), indent=2))
@@ -74,6 +78,24 @@ def main(argv: list[str] | None = None) -> None:
         from vs.pipeline import add_example
         text = Path(args.text_file).read_text(encoding="utf-8") if args.text_file else ""
         print(json.dumps(add_example(args.label, url=args.url, text=text, why=args.why), indent=2))
+
+
+def serve(port: int, *, browser: bool) -> None:
+    """Run the dashboard in a child process and start it again whenever it
+    exits with RESTART_CODE, so a restart loads the current code and settings."""
+    cmd = [sys.executable, "-m", "vs.cli", "serve", "--child", "--port", str(port)]
+    if browser:
+        webbrowser.open(f"http://127.0.0.1:{port}/")
+    while True:
+        child = subprocess.Popen(cmd)
+        try:
+            code = child.wait()
+        except KeyboardInterrupt:  # Ctrl+C reaches the child too
+            child.wait()
+            return
+        if code != RESTART_CODE:
+            sys.exit(code)
+        print("Restarting the dashboard...", flush=True)
 
 
 if __name__ == "__main__":

@@ -93,3 +93,21 @@ def test_join_spelled_titles():
 
     raw = "Archivio\n   Prototipi  \n\n  M \n o\n\n d \nu\nl\ni\nNel laboratorio Moduli Ribelli"
     assert _join_spelled(raw) == "Archivio\nPrototipi\nModuli\nNel laboratorio Moduli Ribelli"
+
+
+def test_the_score_measures_closeness_to_you_not_rank_in_the_batch():
+    from vs.score import absolute_score, scaled, score_parts
+
+    w = {}
+    parts = score_parts(w, n_eff=20)
+    close = absolute_score(scaled(0.50, w, "portfolio_range"), scaled(0.45, w, "taste_range"), 1.0, 1.0, parts)
+    far = absolute_score(scaled(0.39, w, "portfolio_range"), scaled(0.21, w, "taste_range"), 0.0, 0.0, parts)
+    assert close > 80 and far < 10
+    # The same opportunity gets the same score whatever else was found:
+    # nothing in the formula looks at the other opportunities.
+    assert absolute_score(0.5, 0.5, None, 0.0, parts) == absolute_score(0.5, 0.5, None, 0.0, parts) == 50
+    # Without the model's judgement the other parts share its weight.
+    assert absolute_score(1.0, 1.0, None, 0.0, parts) == 100
+    # With no stars yet, taste counts nothing (instead of dragging every score down).
+    assert round(absolute_score(0.6, 0.0, 0.6, 0.0, score_parts(w, n_eff=0)), 6) == 60
+    assert 0 <= absolute_score(-5, -5, 0.0, -1, parts) and absolute_score(9, 9, 1.0, 9, parts) <= 100

@@ -1,5 +1,22 @@
 <div class="progress">
-  {% if progress.running %}<strong>Working…</strong>{% else %}<strong>Finished</strong> · <a href="/">reload the feed</a>{% endif %}
+  {% if progress.running %}<strong>Working…</strong>{% else %}<strong>Finished</strong> · <a href="/feed">reload the feed</a>{% endif %}
+  {% if progress.agents %}
+  <table class="agents">
+    <thead class="sr-only"><tr><th>Agent</th><th>Status</th><th>Working on</th><th>Progress</th><th>Action</th></tr></thead>
+    {% for a in progress.agents %}
+    <tr>
+      <td><strong>{{ a.label }}</strong><br><span class="small muted">{{ a.does }}</span></td>
+      <td><span class="chip agent-{{ a.status }}">{{ a.status }}</span></td>
+      <td class="small">{{ a.current }}</td>
+      <td class="small muted">{{ a.done }} done{% if a.queued %} · {{ a.queued }} waiting{% endif %}</td>
+      <td>{% if progress.running and a.status in ('waiting', 'idle', 'working') %}
+        <button class="btn ghost" hx-post="/agents/{{ a.name }}/stop" hx-swap="none"
+                title="{{ 'Stops scoring as pages are read; what it skips is scored at the end' if a.name == 'scorer' else 'Stops this agent and the ones before it; what is already queued after it is finished' }}">Stop</button>
+      {% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
   <div class="log">{% for line in progress.lines %}{{ line }}
 {% endfor %}</div>
 </div>

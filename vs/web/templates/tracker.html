@@ -3,10 +3,13 @@
 {% block main %}
 <h1>Applications</h1>
 <p class="lede">Favourites and everything you've given a status. Change the status on an opportunity's page.</p>
+{% if not cols.values() | map('length') | sum %}
+<div class="empty"><h2>No applications yet</h2><p>Save an opportunity, or give it a status on its page, and it shows up here.</p><a class="btn primary" href="/feed">Go to the feed</a></div>
+{% else %}
 <div class="board">
   {% for name, rows in cols.items() %}
   <div class="col">
-    <h3>{{ name | replace('_', ' ') }} · {{ rows | length }}</h3>
+    <h2>{{ name | replace('_', ' ') }} · {{ rows | length }}</h2>
     {% for o in rows %}
     <div class="mini">
       <a href="/o/{{ o.id }}"><strong>{{ o.title_en or o.title_original }}</strong></a>
@@ -18,4 +21,5 @@
   </div>
   {% endfor %}
 </div>
+{% endif %}
 {% endblock %}

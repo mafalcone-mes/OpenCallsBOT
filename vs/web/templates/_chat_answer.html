@@ -1,0 +1,69 @@
+{# The app's answer to one question: it replaces the "searching" dots under
+   the question. Every word below comes from the app, not the model. #}
+  <div class="chat-a answer">
+    <h2>{{ a.title }}</h2>
+    {% if a.chips %}<p class="chips" aria-label="What was searched">{% for c in a.chips %}<span class="chip">{{ c }}</span>{% endfor %}</p>{% endif %}
+    {% if a.note %}<p class="small muted">{{ a.note }}</p>{% endif %}
+
+    {% if a.kind == 'opportunities' %}
+      {% if a.rows %}
+      <ol class="cards list chat-results">
+        {% for o in a.rows %}<li>{% include "_card.html" %}</li>{% endfor %}
+      </ol>
+      <p class="small muted">Numbers let you act on them: “save 1 and 3”, “dismiss 2, not my field”.</p>
+      {% endif %}
+      {% if a.loosen %}
+      <p>There are some if you search</p>
+      <div class="chat-examples">
+        {% for label, n, p in a.loosen %}<button class="btn" type="button" onclick='ask({{ (q or "") | tojson }}, {{ p | tojson | tojson }})'>{{ label }} · {{ n }}</button>{% endfor %}
+      </div>
+      {% endif %}
+      {% if a.feed_link %}<p><a class="btn ghost" href="{{ a.feed_link }}">Open in the feed with these filters</a></p>{% endif %}
+
+    {% elif a.kind == 'sources' %}
+      {% if a.rows %}
+      <table>
+        <thead><tr><th>Source</th><th>Kind</th><th>Open items</th><th>Last read</th></tr></thead>
+        {% for s in a.rows %}<tr><td><a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.name }} ↗</a></td><td class="muted">{{ s.kind }}</td><td>{{ s.open }}</td><td class="muted">{{ s.last_ok or '—' }}</td></tr>{% endfor %}
+      </table>
+      {% endif %}
+      <p><a class="btn ghost" href="/sources">All sources</a></p>
+
+    {% elif a.kind == 'studios' %}
+      {% if a.rows %}
+      <table>
+        <thead><tr><th>Studio</th><th>Where</th><th>Kind of work</th><th>Jobs page</th></tr></thead>
+        {% for s in a.rows %}<tr><td><a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.name }} ↗</a></td><td class="muted">{{ s.city }}{{ ', ' if s.city and s.country }}{{ s.country }}</td>
+          <td class="muted">{{ (s.types or []) | join(', ') }}</td><td>{% if s.jobs_url %}<a href="{{ s.jobs_url }}" target="_blank" rel="noopener">jobs ↗</a>{% endif %}</td></tr>{% endfor %}
+      </table>
+      {% endif %}
+      <p><a class="btn ghost" href="/studios">All studios</a></p>
+
+    {% elif a.kind == 'projects' %}
+      {% if a.rows %}
+      <ul class="plain">{% for p in a.rows %}<li><strong>{{ p.name }}</strong>{% if p.year %} · {{ p.year }}{% endif %} <span class="muted small">{{ p.categories | join(', ') }}</span>
+        <button class="btn ghost" type="button" onclick='ask({{ ("opportunities close to " ~ p.name) | tojson }}, {{ {"intent": "near_project", "project": p.slug} | tojson | tojson }})'>What's close to it</button></li>{% endfor %}</ul>
+      {% endif %}
+
+    {% elif a.kind == 'confirm' %}
+      {% if a.rows %}<ul class="plain">{% for r in a.rows %}<li>{{ r.title_en or r.title_original }}</li>{% endfor %}</ul>{% endif %}
+      <div class="chat-confirm">
+        {% if a.confirm.action == 'refresh' %}
+        <form method="post" action="/refresh"><button class="btn primary">Yes, search my sources</button></form>
+        {% else %}
+        <button class="btn primary" hx-post="/chat/do" hx-vals='{{ {"payload": a.confirm | tojson} | tojson }}' hx-target="closest .chat-confirm" hx-swap="outerHTML" hx-disabled-elt="this">Yes, do it</button>
+        {% endif %}
+        <button class="btn ghost" type="button" onclick="cancelConfirm(this)">Cancel</button>
+      </div>
+
+    {% else %}
+      <ul class="plain">
+        <li><strong>Find opportunities</strong> by kind, place, deadline, money, words in the text or topic: “residencies in Italy closing this month”, “bandi con la parola fotografia”.</li>
+        <li><strong>Close to your work</strong>: “what's close to my project …”.</li>
+        <li><strong>Your state</strong>: “my saved ones”, “my applications”, “what I dismissed”.</li>
+        <li><strong>Sources and studios</strong>: “which sources look at residencies?”, “studios in Milan”.</li>
+        <li><strong>Act on results</strong>: after a search, “save 1 and 2”, “dismiss 3, too corporate”, “set 1 to preparing”; or “search my sources again”. You confirm first.</li>
+      </ul>
+    {% endif %}
+  </div>
+<input type="hidden" name="last" id="chat-last" value="{{ shown }}" hx-swap-oob="true">

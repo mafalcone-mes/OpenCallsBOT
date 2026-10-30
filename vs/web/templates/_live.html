@@ -1,0 +1,9 @@
+<section class="batch live" id="live" aria-labelledby="live-title" aria-live="polite"
+  {% if running %}hx-get="/feed/live?{{ qs ~ '&' if qs }}g={{ tab.id }}&since={{ live }}" hx-trigger="every 5s" hx-swap="outerHTML"{% endif %}>
+  <div class="batch-head">
+    <h2 id="live-title">{{ 'Arriving now' if running else 'Found by this refresh' }}</h2>
+    <span class="muted">{{ live_rows | length }}{% if running %} · each one appears as soon as it has its score{% else %} · <a href="/feed">reload the feed</a>{% endif %}</span>
+  </div>
+  {% if live_rows %}<div class="cards list">{% for o in live_rows %}{% include "_card.html" %}{% endfor %}</div>
+  {% else %}<p class="small muted" style="margin-top:12px">Nothing scored yet: the agents are listing and reading.</p>{% endif %}
+</section>

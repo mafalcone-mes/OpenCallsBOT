@@ -1,14 +1,14 @@
 <form method="post" action="/examples" class="box">
   <h3>Add an example</h3>
   <p class="small muted">A call you found yourself. Paste its link, or its text if it's behind a login, in a PDF or in a newsletter. If it's still open it also goes into your feed.</p>
-  <label>Link</label>
-  <input type="url" name="url" value="{{ prefill.get('url', '') }}" style="width:100%" placeholder="https://…">
-  <label>Or the text</label>
-  <textarea name="text" placeholder="Paste the call here">{{ prefill.get('sel', '') }}</textarea>
+  <label for="ex-url">Link</label>
+  <input id="ex-url" type="url" name="url" value="{{ prefill.get('url', '') }}" style="width:100%" placeholder="https://…">
+  <label for="ex-text">Or the text</label>
+  <textarea id="ex-text" name="text" placeholder="Paste the call here">{{ prefill.get('sel', '') }}</textarea>
   <input type="hidden" name="title" value="{{ prefill.get('title', '') }}">
-  <label>Why? (optional, but it helps: “I love the participatory angle”, “too corporate”)</label>
-  <input type="text" name="why" style="width:100%">
-  <div style="display:flex; gap:8px; margin-top:14px">
+  <label for="ex-why">Why? (optional, but it helps: “I love the participatory angle”, “too corporate”)</label>
+  <input id="ex-why" type="text" name="why" style="width:100%">
+  <div style="display:flex; gap:8px; margin-top:16px">
     <button class="btn primary" name="label" value="interested">I'm interested</button>
     <button class="btn" name="label" value="not_interested">Not for me</button>
   </div>

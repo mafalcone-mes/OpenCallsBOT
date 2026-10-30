@@ -2,19 +2,80 @@
 {% block title %}Feed{% endblock %}
 {% block main %}
 <h1>Feed</h1>
-<p class="lede">Ranked by how close each call is to your projects and to the examples you've marked. Money and fees are shown, never filtered out for you.</p>
+<p class="lede">Each kind of opportunity has its own list, best match first. Money and fees are shown, never filtered out for you.</p>
 {% if portfolio.warnings %}
 <details class="warnings"><summary>{{ portfolio.warnings | length }} note{{ 's' if portfolio.warnings | length != 1 }} about the portfolio content (fix these in the website)</summary>
   <ul>{% for w in portfolio.warnings %}<li>{{ w }}</li>{% endfor %}</ul>
 </details>
 {% endif %}
+
+{% if only_new %}
+<p class="batch-switch">Only what the last refresh ({{ present.run_label(since) }}) found. <a href="/feed?{{ qs ~ '&' if qs }}g={{ tab.id }}">Back to the whole feed</a></p>
+{% endif %}
+
+<nav class="groups" aria-label="Kinds of opportunity">
+  {% for t in tabs if (t.new if only_new else t.n) or t.id == tab.id %}
+  <a href="?{{ qs ~ '&' if qs }}g={{ t.id }}{{ '&new=1' if only_new }}" class="{{ 'on' if t.id == tab.id }}" {{ 'aria-current=page' if t.id == tab.id }}>
+    <span class="g-label">{{ t.label }}</span><span class="g-n">{{ t.new if only_new else t.n }}</span>
+    {% if t.new and not only_new %}<span class="g-new" title="{{ t.new }} found by the last refresh">+{{ t.new }}</span>{% endif %}
+  </a>
+  {% endfor %}
+</nav>
+
 {% include "_filters.html" %}
-<p class="small muted">{{ rows | length }} opportunit{{ 'y' if rows | length == 1 else 'ies' }}{% if hidden_count %} · <a href="/hidden">{{ hidden_count }} hidden by your rules</a>{% endif %}</p>
+
+<p class="tally">
+  {% set n = tab.new if only_new else tab.n %}{% set shown = (new_rows | length) + (rows | length) %}
+  {% if n %}{{ n }} {{ tab.label | lower }}{% if tab.new and not only_new %}, {{ tab.new }} of them new{% endif %}{% if n > shown %}, showing the best {{ shown }} first{% endif %}.
+  {% if tab.bad and not only_new %}{{ tab.bad }} likely ineligible {{ 'is' if tab.bad == 1 else 'are' }} at the bottom.{% endif %}{% endif %}
+  {% if hidden_count %}<a href="/hidden">{{ hidden_count }} hidden by your rules</a>{% endif %}
+</p>
+
+{% if live %}{% set running = true %}{% include "_live.html" %}{% endif %}
+
+{% if new_rows %}
+<section class="batch" aria-labelledby="batch-title">
+  <div class="batch-head">
+    <h2 id="batch-title">New from the last refresh</h2>
+    <span class="muted">{{ tab.new }} · {{ present.run_label(since) }}</span>
+    {% if not only_new %}<a class="btn" href="/feed?{{ qs ~ '&' if qs }}g={{ tab.id }}&new=1">Only the new ones</a>{% endif %}
+  </div>
+  <div class="cards list">{% for o in new_rows %}{% include "_card.html" %}{% endfor %}</div>
+</section>
+{% if rows %}<div class="batch-rule" role="separator"><span>Everything else · {{ total }}</span></div>{% endif %}
+{% endif %}
+
 {% if rows %}
-<div class="cards">
-  {% for o in rows %}{% include "_card.html" %}{% endfor %}
+<h2 class="sr-only">All {{ tab.label | lower }}</h2>
+<div class="cards list">
+  {% include "_feed_page.html" %}
 </div>
+{% elif only_new and not new_rows %}
+<div class="empty"><h2>Nothing new in {{ tab.label | lower }}</h2><p>The last refresh found no new ones.</p><a class="btn primary" href="/feed?g={{ tab.id }}">See the whole feed</a></div>
+{% elif new_rows %}
 {% else %}
-<div class="empty">Nothing here yet. {% if not f %}Press <strong>Refresh</strong> to search your sources.{% else %}Try clearing some filters.{% endif %}</div>
+{# empty: say why, and offer the next step as a button #}
+<div class="empty">
+  {% if tabs | sum(attribute='n') == 0 and not f %}
+    <h2>No opportunities yet</h2>
+    <p>The app hasn't searched your sources yet, or found nothing open.</p>
+    {% if not progress.running %}<form method="post" action="/refresh"><button class="btn primary">Search my sources</button></form>{% endif %}
+  {% elif f %}
+    <h2>No {{ tab.label | lower }} match {{ '“' ~ f.q ~ '”' if f.q else 'these filters' }}</h2>
+    {% if loosen %}
+    <p>There are some without one of the filters:</p>
+    <div class="loosen">
+      {% for label, n, q in loosen %}<a class="btn {{ 'primary' if loop.first }}" href="?{{ q }}">{{ label }} · {{ n }}</a>{% endfor %}
+      <a class="btn ghost" href="?g={{ tab.id }}">Clear all filters</a>
+    </div>
+    {% else %}
+    <p>Try fewer filters, or a wider region or deadline.</p>
+    <a class="btn primary" href="?g={{ tab.id }}">Clear the filters</a>
+    {% endif %}
+  {% else %}
+    <h2>No {{ tab.label | lower }} right now</h2>
+    <p>Open ones appear here after a refresh. The other tabs may have some.</p>
+  {% endif %}
+</div>
 {% endif %}
 {% endblock %}

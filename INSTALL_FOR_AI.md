@@ -54,6 +54,19 @@ Optional:
 Start Ollama (the app icon in the menu bar, or `open -a Ollama`), then:
 `curl -s http://127.0.0.1:11434/api/version` must answer.
 
+Check that models run on the GPU, not the CPU (on CPU a refresh is about 10x
+slower: roughly 2 minutes per page instead of 10-15 s):
+
+```bash
+ollama run qwen3:8b "hi" >/dev/null && ollama ps   # PROCESSOR must say "100% GPU" (or a GPU/CPU split)
+```
+
+On Windows with an NVIDIA card, if it says `100% CPU`: update Ollama and the
+NVIDIA driver, quit overlay software (game launchers' in-game overlays,
+screen recorders), restart Ollama and check again. `OLLAMA_DEBUG=1 ollama serve`
+prints why GPU discovery failed (look for `failure during llama-server GPU discovery`).
+Tell the person; don't change drivers without asking.
+
 ## 3. Get the code
 
 The repository is private: the person needs to have accepted the GitHub

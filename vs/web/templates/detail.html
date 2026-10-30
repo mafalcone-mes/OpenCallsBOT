@@ -1,82 +1,113 @@
 {% extends "base.html" %}
 {% block title %}{{ o.title_en or o.title_original }}{% endblock %}
-{% macro fact(label, value, field=None) -%}
+{% macro checked(value, field) -%}
   {% set fc = (o.field_confidence or {}).get(field) if field else None %}
+  {% if fc and not fc.verified %}<span class="unverified" title="Unverified: {{ fc.why }}. Evidence: “{{ fc.evidence }}”">{{ value }} ⚠</span>{% elif fc %}<span title="Evidence: “{{ fc.evidence }}”">{{ value }}</span>{% else %}{{ value }}{% endif %}
+{%- endmacro %}
+{% macro fact(label, value, field=None) -%}
   <dt>{{ label }}</dt>
-  <dd>{% if fc and not fc.verified %}<span class="unverified" title="Unverified: {{ fc.why }}. Evidence: “{{ fc.evidence }}”">{{ value }} ⚠</span>{% elif fc %}<span title="Evidence: “{{ fc.evidence }}”">{{ value }}</span>{% else %}{{ value }}{% endif %}</dd>
+  <dd>{{ checked(value, field) }}</dd>
 {%- endmacro %}
 {% block main %}
+{# Order follows what decides whether to apply: what it is, deadline, who can
+   apply, what you get; then the one main action; details further down. #}
 {% set cond = o.conditions or {} %}
 {% set el = o.eligibility or {} %}
+{% set dl = present.days_left(o.deadline) %}
+{% set dl_main, dl_when = present.deadline_parts(o.deadline, o.deadline_kind) %}
+{% set elig = [('age ' ~ (el.age_min or '') ~ '–' ~ (el.age_max or '')) if (el.age_min or el.age_max) else '', (el.nationalities or []) | join(', '), ('residence ' ~ (el.residence or []) | join(', ')) if el.residence else '', el.education or '', el.career_stage or ''] | select | join(' · ') %}
 <p class="small muted"><a href="javascript:history.back()">← Back</a></p>
-<h1 style="margin-top:10px">{{ o.title_en or o.title_original }}</h1>
+<h1 class="detail-title">{{ o.title_en or o.title_original }}</h1>
 {% if o.title_original and o.title_original != o.title_en %}<p class="muted">{{ o.title_original }}</p>{% endif %}
-<p class="lede">{{ o.org_name or 'Organisation unclear' }} · {{ present.TYPE_LABELS.get(o.type, o.type) }} · {{ present.location(o) }}</p>
+<p class="lede">{{ o.org_name or 'Organisation unclear' }} · {{ present.TYPE_LABELS.get(o.type, o.type) }}</p>
 
-<a class="origlink" href="{{ o.canonical_url }}" target="_blank" rel="noopener">Official call ↗ {{ o.canonical_url }}</a>
+<dl class="keyfacts">
+  <div class="kf deadline {{ 'closed' if dl is not none and dl < 0 else 'soon' if dl is not none and dl <= 14 }}">
+    <dt>Deadline</dt>
+    <dd><strong>{{ dl_main }}</strong>{% if dl_when %}<span>{{ checked(dl_when, 'deadline') }}</span>{% endif %}</dd>
+  </div>
+  <div class="kf">
+    <dt>Who can apply</dt>
+    <dd>{% if o.eligibility_flag == 'likely_ineligible' %}<strong class="err">Likely not you</strong>
+        {% elif o.eligibility_flag == 'check' %}<strong class="warn">Check</strong>
+        {% elif elig %}<strong>Open to you</strong>{% else %}<strong>No limits found</strong>{% endif %}
+        {% if o.eligibility_notes %}<span>{{ o.eligibility_notes | join('; ') }}</span>{% elif elig %}<span>{{ checked(elig, 'eligibility') }}</span>{% endif %}</dd>
+  </div>
+  <div class="kf">
+    <dt>What you get</dt>
+    <dd><strong>{{ checked(present.money_badge(cond), 'money_kind') }}</strong>
+        {% if cond.amount %}<span>{{ checked(present.money(cond.amount, cond.currency) ~ (' / ' ~ cond.period if cond.period else ''), 'amount') }}</span>{% endif %}
+        {% if cond.application_fee %}<span class="err">Application fee {{ checked(present.money(cond.application_fee, cond.currency), 'application_fee') }}</span>{% endif %}</dd>
+  </div>
+  <div class="kf">
+    <dt>Where</dt>
+    <dd><strong>{{ present.location(o) or 'Not stated' }}</strong>{% if o.duration_text or o.start_date %}<span>{{ ((o.start_date or '') ~ ' ' ~ (o.duration_text or '')) | trim }}</span>{% endif %}</dd>
+  </div>
+</dl>
+
+<div class="actions">
+  <a class="btn primary" href="{{ o.canonical_url }}" target="_blank" rel="noopener">Open the call ↗</a>
+  {{ present.save_button(o.id, o.favourite) | safe }}
+  <a class="btn ghost" href="/o/{{ o.id }}.ics">Add deadline to calendar</a>
+</div>
+<p class="small muted url">{{ o.canonical_url }}</p>
 {% if o.source_urls and o.source_urls | length > 1 %}<p class="small muted">Also listed at: {% for u in o.source_urls %}{% if u != o.canonical_url %}<a href="{{ u }}" target="_blank" rel="noopener">{{ u[:70] }}</a> {% endif %}{% endfor %}</p>{% endif %}
 {% if o.from_example %}<p class="small muted">Added by you as an example.</p>{% endif %}
 
 <div class="detail">
   <div>
     <p>{{ o.summary_en }}</p>
+    {% if o.required_docs %}
+    <h2>What they ask for</h2>
+    <ul class="plain">{% for d in o.required_docs %}<li><strong>{{ present.DOC_LABELS.get(d.kind, d.kind) }}</strong>{% if not d.required %} (optional){% endif %}{% if d.details %}: {{ d.details }}{% endif %}</li>{% endfor %}</ul>
+    {% endif %}
+
+    <h2>Details</h2>
     <dl class="facts">
-      {{ fact('Deadline', present.deadline_label(o.deadline, o.deadline_kind), 'deadline') }}
-      {{ fact('Money', present.money_badge(cond), 'money_kind') }}
-      {% if cond.amount %}{{ fact('Amount', present.money(cond.amount, cond.currency) ~ (' / ' ~ cond.period if cond.period else ''), 'amount') }}{% endif %}
-      {% if cond.application_fee %}{{ fact('Application fee', present.money(cond.application_fee, cond.currency), 'application_fee') }}{% endif %}
-      {{ fact('Start / duration', ((o.start_date or '') ~ ' ' ~ (o.duration_text or '')) | trim or '—') }}
       {{ fact('Apply in', (o.application_languages or []) | join(', ') | upper or '—') }}
-      {% if el.age_min or el.age_max or el.nationalities or el.residence or el.education or el.career_stage %}
-      {{ fact('Eligibility', [('age ' ~ (el.age_min or '') ~ '–' ~ (el.age_max or '')) if (el.age_min or el.age_max) else '', (el.nationalities or []) | join(', '), ('residence ' ~ (el.residence or []) | join(', ')) if el.residence else '', el.education or '', el.career_stage or ''] | select | join(' · '), 'eligibility') }}
-      {% endif %}
-      {% if o.eligibility_flag and o.eligibility_flag != 'ok' %}{{ fact('For you', (o.eligibility_flag | replace('_', ' ')) ~ ': ' ~ (o.eligibility_notes or []) | join('; ')) }}{% endif %}
       {{ fact('Submission', ((o.submission or {}).method or 'unknown') ~ (' · anonymous' if (o.submission or {}).anonymous else '')) }}
+      {% if elig %}{{ fact('Eligibility', elig, 'eligibility') }}{% endif %}
       {{ fact('Seniority', o.seniority or 'unknown') }}
       {{ fact('Field', o.field_tag or '—') }}
       {{ fact('Source', o.source_id) }}
     </dl>
-    {% if o.required_docs %}
-    <h2>What they ask for</h2>
-    <ul style="margin-left:18px">{% for d in o.required_docs %}<li><strong>{{ present.DOC_LABELS.get(d.kind, d.kind) }}</strong>{% if not d.required %} (optional){% endif %}{% if d.details %}: {{ d.details }}{% endif %}</li>{% endfor %}</ul>
-    {% endif %}
     {% if o.other_dates %}
     <h2>Other dates</h2>
-    <ul style="margin-left:18px">{% for d in o.other_dates %}<li>{{ d.label }}: {{ d.date }}</li>{% endfor %}</ul>
+    <ul class="plain">{% for d in o.other_dates %}<li>{{ d.label }}: {{ d.date }}</li>{% endfor %}</ul>
     {% endif %}
 
     <h2 id="brief">Application brief</h2>
     {% include "_brief.html" %}
 
-    <h2>Text of the call (as fetched)</h2>
-    <div class="rawtext">{{ o.raw_text }}</div>
+    <details class="rawcall">
+      <summary>Text of the call, as fetched</summary>
+      <div class="rawtext">{{ o.raw_text }}</div>
+    </details>
   </div>
 
   <aside class="side">
     <div class="box">
-      <div style="display:flex; gap:10px; align-items:center">
-        <button class="fav {{ 'on' if o.favourite }}" hx-post="/o/{{ o.id }}/fav" hx-vals='{"on": {{ 0 if o.favourite else 1 }}}' hx-swap="outerHTML">{{ '★' if o.favourite else '☆' }}</button>
-        <form method="post" action="/o/{{ o.id }}/status" style="flex:1">
-          <select name="status" onchange="this.form.submit()" style="width:100%">
-            <option value="">No application status</option>
-            {% for s in statuses %}<option value="{{ s }}" {{ 'selected' if o.app_status == s }}>{{ s | replace('_', ' ') | capitalize }}</option>{% endfor %}
-          </select>
-        </form>
-      </div>
-      <form method="post" action="/o/{{ o.id }}/note">
-        <label>Notes</label>
-        <textarea name="text" style="min-height:80px">{{ o.notes or '' }}</textarea>
-        <button class="btn" style="margin-top:6px">Save note</button>
+      <h3>Your application</h3>
+      <form method="post" action="/o/{{ o.id }}/status">
+        <label for="status-{{ o.id }}">Status</label>
+        <select id="status-{{ o.id }}" name="status" onchange="this.form.submit()" style="width:100%">
+          <option value="">No application status</option>
+          {% for s in statuses %}<option value="{{ s }}" {{ 'selected' if o.app_status == s }}>{{ s | replace('_', ' ') | capitalize }}</option>{% endfor %}
+        </select>
       </form>
-      <p style="margin-top:12px"><a class="btn" href="/o/{{ o.id }}.ics">Add deadline to calendar (.ics)</a></p>
+      <form method="post" action="/o/{{ o.id }}/note">
+        <label for="note-{{ o.id }}">Notes</label>
+        <textarea id="note-{{ o.id }}" name="text" style="min-height:80px">{{ o.notes or '' }}</textarea>
+        <button class="btn" style="margin-top:8px">Save note</button>
+      </form>
     </div>
 
     {% if o.final is not none %}
     <div class="box">
       <h3>Why it's here · {{ ((o.final or 0) * 100) | round | int }}</h3>
-      {% for r in o.reasons or [] %}<p class="small" style="margin-bottom:6px">{{ r }}</p>{% endfor %}
+      {% for r in o.reasons or [] %}<p class="small" style="margin-bottom:8px">{{ r }}</p>{% endfor %}
       {% for ref, title in similar %}<p class="small muted">Similar to <strong>{{ title }}</strong>{{ ', work you admire' if ref.startswith('reference:') else ', which you liked' }}.</p>{% endfor %}
-      {% if o.red_flags %}<p class="small warn" style="margin-top:6px">{{ o.red_flags | join(' · ') }}</p>{% endif %}
+      {% if o.red_flags %}<p class="small warn" style="margin-top:8px">{{ o.red_flags | join(' · ') }}</p>{% endif %}
       {% if o.discovery_reason %}<p class="small muted">Discovery: {{ o.discovery_reason }}</p>{% endif %}
       <div class="bars" style="margin-top:12px">
         {% for label, val, scale in [('Portfolio', o.portfolio_sim, 1), ('Taste', o.taste, 1), ('Keywords', o.keyword, 1), ('Source', o.source_w, 1), ('LLM fit', ((o.llm_fit - 1) / 4) if o.llm_fit else none, 1)] %}
@@ -101,8 +132,9 @@
     <div class="box">
       <h3>Teach the app</h3>
       <form method="post" action="/o/{{ o.id }}/like">
-        <input type="text" name="why" placeholder="Why? (optional)" style="width:100%">
-        <div style="display:flex; gap:6px; margin-top:8px">
+        <label for="why-{{ o.id }}">Why? (optional)</label>
+        <input id="why-{{ o.id }}" type="text" name="why" style="width:100%">
+        <div style="display:flex; gap:8px; margin-top:8px">
           <button class="btn" name="label" value="interested">More like this</button>
           <button class="btn" name="label" value="not_interested">Less like this</button>
         </div>

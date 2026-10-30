@@ -7,7 +7,10 @@ from pathlib import Path
 import tomlkit
 
 APP_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = APP_DIR / "data"
+# VS_DATA_DIR: a second, separate board (its own database, examples, stars),
+# e.g. to try another list of sources without touching the usual one.
+DATA_DIR = Path(os.environ.get("VS_DATA_DIR") or "data")
+DATA_DIR = DATA_DIR if DATA_DIR.is_absolute() else APP_DIR / DATA_DIR
 EXAMPLES_DIR = DATA_DIR / "examples"
 RAW_DIR = DATA_DIR / "raw"
 LOG_DIR = DATA_DIR / "logs"

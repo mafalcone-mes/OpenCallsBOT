@@ -49,8 +49,23 @@ def _parse(text: str) -> list[dict]:
     return rows
 
 
+def local_csv() -> Path | None:
+    """VS_SOURCES_CSV: read the sources from this CSV (same columns as the
+    sheet) instead of the Google Sheet, e.g. to try a new list before importing it."""
+    import os
+    raw = os.environ.get("VS_SOURCES_CSV")
+    if not raw:
+        return None
+    path = Path(raw)
+    return path if path.is_absolute() else SNAPSHOT.parent / path
+
+
 def rows(sheet_cfg: dict) -> tuple[list[dict] | None, str | None]:
     """(rows, error). rows is None when nothing usable is available."""
+    if path := local_csv():
+        if not path.exists():
+            return None, f"VS_SOURCES_CSV: {path} not found: using preferences.toml"
+        return _parse(path.read_text(encoding="utf-8-sig")) or None, None
     now = time.time()
     if _cache["rows"] is not None and now - _cache["at"] < TTL_S:
         return _cache["rows"], _cache["error"]
@@ -84,7 +99,7 @@ def apply_to_prefs(data: dict) -> dict:
     """Replace sources / watchlist / studios in the preferences with the sheet's."""
     import os
     sheet_cfg = data.get("sheet", {})
-    if not sheet_cfg.get("enabled") or not sheet_cfg.get("url") or os.environ.get("VS_NO_SHEET"):
+    if not local_csv() and (not sheet_cfg.get("enabled") or not sheet_cfg.get("url") or os.environ.get("VS_NO_SHEET")):
         return data
     got, error = rows(sheet_cfg)
     data["_sheet_error"] = error

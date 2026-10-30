@@ -64,14 +64,22 @@ enabled = false
 field_titles = ''
 
 [weights]
-portfolio = 0.4        # similarity to your projects (context, not the main criterion)
-taste_max = 2.0        # your stars, examples, corrections and references; ramps up with signals
-taste_full_at = 15     # full taste weight after ~15 signals
-keywords = 0.5
-source = 0.2
+# The score (0-100) says how close an opportunity is to you, on fixed scales:
+# it never depends on what else was found.
+score_portfolio = 0.4  # similarity to your projects
+score_taste = 0.3      # similarity to your stars, examples, corrections and references
+score_model = 0.3      # the local model's judgement (1-5); without it the other two share its weight
+keyword_bonus = 5      # up to +5 points when your keywords appear
+taste_full_at = 15     # taste counts fully after ~15 signals (less before)
+# Cosine similarity that counts 0 and 1 (depends on the embedding model).
+portfolio_range = [0.38, 0.52]
+taste_range = [0.20, 0.50]
+far_below = 40         # below this, at the bottom of the feed under "Far from your work"
+explain_from = 40      # the model explains only the ones scoring at least this without it (plus discovery picks)
+source = 0.2           # source weight and region only order equal scores
 negative_lambda = 0.7
-llm_blend = 0.4        # final = (1-b)*prelim + b*llm
 rerank_top_k = 60      # how many of the top matches the local model explains each time
+rerank_stale_per_run = 10  # explanations gone out of date (e.g. after a new star) redone per refresh; -1 = all
 discovery_share = 0.2
 reference_total = 3.0  # all reference projects together weigh like ~3 liked examples
 # Small bonus by region (remote counts as reachable). Adjust to where you want to work.
@@ -87,8 +95,11 @@ dismiss_taste = { weight = -0.5, half_life = 180 }
 [llm]
 # Local models served by Ollama. INSTALL_FOR_AI.md picks them from your RAM.
 host = "http://127.0.0.1:11434"
-model = "qwen3.5:9b"
+model = "qwen3.5:9b"        # explains matches and writes briefs
 fallback_model = "qwen3:8b"
+# Reads every new page (most of a refresh). A smaller model is much faster;
+# leave it out to use `model`. Check with `ollama ps` that it runs "100% GPU".
+# extract_model = "qwen3:4b"
 embed_model = "bge-m3"
 num_ctx = 6144
 
@@ -96,7 +107,9 @@ num_ctx = 6144
 min_delay_s = 3.0
 max_delay_s = 5.0
 source_min_interval_h = 12
-detail_pages_per_source = 25
+detail_pages_per_source = 25   # per source, the new pages closest to your work are read first
+max_pages_per_refresh = 150    # all sources together; the rest is read at the next refresh (0 = no limit)
+parallel_downloads = 4         # sites the Downloader agent fetches at once while the Reader reads (one request at a time per site)
 
 [search]
 # Job boards (Indeed via JobSpy; LinkedIn is never used). Fill in YOUR roles.
