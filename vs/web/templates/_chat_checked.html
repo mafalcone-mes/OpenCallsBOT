@@ -1,0 +1,9 @@
+{# What a site check found: the open opportunities of the sites read. #}
+<section class="chat-checked" aria-label="Checked {{ names }}">
+  <h3>{{ 'Checked ' ~ names ~ ': ' }}{{ (rows | length) ~ ' open' if rows else 'nothing open right now' }}</h3>
+  {% if rows %}
+  <ol class="cards list">{% for o in rows %}<li>{% include "_card.html" %}</li>{% endfor %}</ol>
+  {% else %}
+  <p class="small muted">{{ 'Their page was read and nothing open was found' if ok else 'The site could not be read' }}{% if errors %}: {{ errors | join('; ') }}{% endif %}.{% if links %} Have a look yourself: {% for s in links %}<a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.name }} {{ icon('external-link', 14) }}</a>{{ ', ' if not loop.last }}{% endfor %}.{% endif %}</p>
+  {% endif %}
+</section>

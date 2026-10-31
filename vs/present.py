@@ -3,7 +3,14 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from vs.web.icons import icon
 
+# One Lucide icon per kind of opportunity (vs/web/icons.py), beside its label.
+TYPE_ICONS = {
+    "job": "briefcase-business", "residency": "house", "open_call": "megaphone", "grant": "hand-coins", "commission": "pen-tool",
+    "competition": "trophy", "workshop": "hammer", "summer_school": "graduation-cap", "fellowship": "graduation-cap",
+    "phd": "graduation-cap", "research_position": "flask-conical", "other": "circle-dot",
+}
 TYPE_LABELS = {
     "job": "Job", "residency": "Residency", "open_call": "Open call", "grant": "Grant", "commission": "Commission",
     "competition": "Competition", "workshop": "Workshop", "summer_school": "Summer school", "fellowship": "Fellowship",
@@ -122,7 +129,7 @@ def save_button(oid: int, on: bool) -> str:
     featured). Same markup on cards, the detail page and after a click."""
     return (f'<button class="btn save {"on" if on else ""}" hx-post="/o/{oid}/fav" hx-vals=\'{{"on": {0 if on else 1}}}\' '
             f'hx-swap="outerHTML" hx-disabled-elt="this" aria-pressed="{"true" if on else "false"}" title="{"Remove from saved" if on else "Save for later"}">'
-            f'<span aria-hidden="true">{"★" if on else "☆"}</span> {"Saved" if on else "Save"}</button>')
+            f'{icon("star")} {"Saved" if on else "Save"}</button>')
 
 
 def project_chips(suggested: list[dict] | None, n: int = 3) -> list[dict]:

@@ -1,0 +1,90 @@
+{# One to-do card. A call still to send lists the documents it asks for, each
+   ticked off here (the card comes back from /todo/card with its new next
+   step and group). Rendered on the board and on its own after a change. #}
+{% set dl_main, dl_when = present.deadline_parts(c.due) if c.due else ('', '') %}
+{% set days = present.days_left(c.due) if c.due else none %}
+{% set kid = c.key | replace(':', '-') %}
+<li class="tcard" data-key="{{ c.key }}" data-group="{{ c.group or '' }}" data-due="{{ (c.due or '')[:10] or '9999' }}"
+    data-score="{{ ((c.score * 100) | round | int) if c.score is not none else -1 }}" data-changed="{{ c.changed }}"
+    data-text="{{ (c.title ~ ' ' ~ c.org ~ ' ' ~ c.sub ~ ' ' ~ c.note) | lower }}"
+    {% if c.briefing %}hx-get="/todo/card?key={{ c.key | urlencode }}" hx-trigger="every 5s" hx-swap="outerHTML"{% endif %}>
+  <input type="checkbox" name="keys" value="{{ c.key }}" form="todo-bulk" id="sel-{{ kid }}" aria-label="Select “{{ c.title }}”">
+  <div class="tcard-body">
+    <span class="tag small">{{ 'Your item · ' if c.own }}{{ dict(kinds)[c.kind] }}</span>
+    <p class="tcard-title">{{ c.title }}</p>
+    {% if c.org %}<p class="small muted">{{ c.org }}</p>{% endif %}
+    {% if c.sub %}<p class="small tnext {{ 'ok' if c.outcome == 'selected' or c.group == 'ready' else 'muted' }}">{{ c.sub }}</p>{% endif %}
+    {% if dl_main %}<p class="small with-icon {{ 'soon' if days is not none and 0 <= days <= 7 else 'muted' }}">{{ icon('clock', 14) }}{{ dl_main }}{% if dl_when %} · {{ dl_when }}{% endif %}</p>{% endif %}
+    {% if c.docs %}
+    <ul class="tdocs" aria-label="Documents they ask for">
+      {% for d in c.docs %}
+      <li><label class="{{ 'done' if d.done }}">
+        <input type="checkbox" name="on" value="1" {{ 'checked' if d.done }} hx-post="/todo/doc" hx-trigger="change"
+               hx-vals='{{ {"oid": c.oid, "doc": d.id} | tojson }}' hx-target="closest .tcard" hx-swap="outerHTML">
+        <span>{{ d.label }}{% if not d.required %} <span class="muted">(optional)</span>{% endif %}
+          {% if d.details %}<span class="muted"> · {{ d.details }}</span>{% endif %}
+          {% if d.auto %}<span class="muted"> · portfolio PDF made</span>{% endif %}</span></label></li>
+      {% endfor %}
+    </ul>
+    {% elif c.group == 'unknown' %}<p class="small muted">The page didn't say which documents. Open the call, then add them with ⋯ → Edit.</p>{% endif %}
+    {% if c.note %}<p class="small tnote">{{ icon('file-text', 14) }} {{ c.note }}</p>{% endif %}
+  </div>
+  <details class="menu">
+    <summary class="btn ghost" aria-label="Actions for “{{ c.title }}”">{{ icon('ellipsis', 20) }}</summary>
+    <form method="post" action="/todo/act" class="menu-list">
+      <input type="hidden" name="keys" value="{{ c.key }}">
+      {% if c.state == 'deleted' %}
+        <input type="hidden" name="from" value="deleted">
+        <button name="action" value="restore">{{ icon('rotate-ccw') }} Restore</button>
+      {% else %}
+        {% if c.href %}<a href="{{ c.href }}">{{ icon('file-text' if c.kind == 'portfolio' and not c.own else 'arrow-right') }} {{ 'Open the brief' if c.kind == 'portfolio' and not c.own else 'Open in the app' }}</a>{% endif %}
+        {% if c.link %}<a href="{{ c.link }}" target="_blank" rel="noopener">{{ icon('external-link') }} Open the call's website</a>{% endif %}
+        {% if c.kind == 'call' and not c.own and c.state != 'done' %}
+        <button type="submit" formaction="/o/{{ c.oid }}/brief" name="back" value="/todo" {{ 'disabled' if c.briefing }}>{{ icon('file-text') }} {{ 'Prepare the brief again' if c.has_brief else 'Prepare brief + portfolio PDF' }}</button>
+        {% endif %}
+        <button type="button" onclick="openEdit('{{ kid }}')">{{ icon('pen-tool') }} {{ 'Edit' if c.own or c.kind == 'call' else 'Add a note' }}</button>
+        <hr>
+        {% for s, label in states if s != c.state %}<button name="action" value="{{ s }}">{{ icon({'todo': 'circle-dot', 'progress': 'clock', 'done': 'check'}[s]) }} Move to {{ label }}</button>{% endfor %}
+        {% if c.kind == 'call' and c.state == 'done' and not c.own %}
+          <hr>
+          {% for o, label in outcomes %}<button name="action" value="{{ o }}" {{ 'aria-current=true' if c.outcome == o }}>{{ icon({'selected': 'trophy', 'rejected': 'x', 'no_answer': 'clock'}[o]) }} Outcome: {{ label }}{{ ' (now)' if c.outcome == o }}</button>{% endfor %}
+        {% endif %}
+        <hr>
+        <button name="action" value="deleted" class="danger">{{ icon('trash-2') }} Delete</button>
+      {% endif %}
+    </form>
+  </details>
+  {% if c.state != 'deleted' %}
+  <div class="tedit" id="edit-{{ kid }}" hidden>
+    {% if c.own %}
+    <form method="post" action="/todo/edit">
+      <input type="hidden" name="tid" value="{{ c.own.id }}">
+      <label for="e-text-{{ kid }}">What to do</label>
+      <input type="text" id="e-text-{{ kid }}" name="text" value="{{ c.own.text }}" required maxlength="300">
+      <div class="tedit-row">
+        <div><label for="e-kind-{{ kid }}">For</label>
+          <select id="e-kind-{{ kid }}" name="kind">{% for k, label in kinds %}<option value="{{ k }}" {{ 'selected' if k == c.own.kind }}>{{ label }}</option>{% endfor %}</select></div>
+        <div><label for="e-due-{{ kid }}">Date</label><input type="date" id="e-due-{{ kid }}" name="due" value="{{ c.own.due }}"></div>
+      </div>
+      <label for="e-call-{{ kid }}">Linked call</label>
+      <select id="e-call-{{ kid }}" name="oid"><option value="">None</option>{% for oid, name in call_options %}<option value="{{ oid }}" {{ 'selected' if oid == c.own.oid }}>{{ name[:70] }}</option>{% endfor %}</select>
+      <p class="tedit-actions"><button class="btn primary">Save</button></p>
+    </form>
+    {% endif %}
+    {% if c.kind == 'call' and not c.own and c.state != 'done' %}
+    <form method="post" action="/todo/doc/add" class="tedit-row">
+      <input type="hidden" name="oid" value="{{ c.oid }}">
+      <div><label for="e-doc-{{ kid }}">Add a document they ask for</label>
+        <select id="e-doc-{{ kid }}" name="kind">{% for k, label in doc_labels.items() %}<option value="{{ k }}">{{ label }}</option>{% endfor %}</select></div>
+      <button class="btn">{{ icon('plus') }} Add</button>
+    </form>
+    {% endif %}
+    <form method="post" action="/todo/note">
+      <input type="hidden" name="key" value="{{ c.key }}">
+      <label for="e-note-{{ kid }}">Note{{ ' (the same as on the call’s page)' if c.kind == 'call' and not c.own }}</label>
+      <textarea id="e-note-{{ kid }}" name="text" rows="2" maxlength="1000">{{ c.note }}</textarea>
+      <p class="tedit-actions"><button class="btn primary">Save note</button> <button class="btn ghost" type="button" onclick="openEdit('{{ kid }}', false)">Close</button></p>
+    </form>
+  </div>
+  {% endif %}
+</li>

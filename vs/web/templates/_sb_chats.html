@@ -1,0 +1,13 @@
+{# The side bar's last chats; also sent out of band when a question adds or moves one. #}
+<section class="sb-chats" id="sb-chats" aria-labelledby="sb-chats-title" {% if oob %}hx-swap-oob="true"{% endif %}>
+  <h2 id="sb-chats-title">Chats</h2>
+  {% if chats %}
+  <ul>
+    {% for c in chats %}
+    <li><a href="/chat/{{ c.id }}" class="{{ 'on' if chat_id is defined and chat_id == c.id }}" {{ 'aria-current=page' if chat_id is defined and chat_id == c.id }}>
+      <span class="sb-title">{{ c.title }}</span></a></li>
+    {% endfor %}
+  </ul>
+  {% if chats_total > chats | length %}<a class="sb-all" href="/chats">All chats ({{ chats_total }})</a>{% endif %}
+  {% else %}<p class="small muted">Your questions appear here.</p>{% endif %}
+</section>

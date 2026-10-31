@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}To-do{% endblock %}
+{% block main %}
+{# The board: click a card (or its box) to select it; ⋯ acts on one card,
+   the bar at the bottom on every selected card. The chips show the calls
+   still to send by what they are missing; sort and search work in the page. #}
+<div class="todo-head">
+  <h1>{{ 'Deleted' if deleted_view else 'To-do' }}</h1>
+  {% if deleted_view %}<a class="btn" href="/todo">{{ icon('chevron-left') }} Back to the board</a>
+  {% else %}<a class="btn ghost" href="/todo?view=deleted">{{ icon('trash-2') }} Deleted ({{ board.deleted | length }})</a>{% endif %}
+</div>
+<p class="lede">{% if deleted_view %}Restore what you deleted. A call you restore is saved again with its old status.
+{% else %}Your saved calls and applications with the documents each one asks for, what the briefs ask of your portfolio, and your own items. Moving a call changes its application status.{% endif %}</p>
+
+<form id="todo-bulk" method="post" action="/todo/act">{% if deleted_view %}<input type="hidden" name="from" value="deleted">{% endif %}</form>
+
+{% if deleted_view %}
+  {% if board.deleted %}<ul class="tlist">{% for c in board.deleted %}{% include "_todo_card.html" %}{% endfor %}</ul>
+  {% else %}<p class="muted" style="margin-top:var(--s-24)">Nothing deleted.</p>{% endif %}
+{% else %}
+<div class="tbar">
+  <div class="tfilter" role="group" aria-label="Show calls still to send">
+    <button type="button" class="btn on" data-filter="" aria-pressed="true">All</button>
+    {% for g, label in groups %}{% if group_counts[g] %}
+    <button type="button" class="btn" data-filter="{{ g }}" aria-pressed="false">{{ label }} <span class="muted">{{ group_counts[g] }}</span></button>
+    {% endif %}{% endfor %}
+  </div>
+  <div class="tfind">
+    <label class="sr-only" for="tsearch">Search the cards</label>
+    <input type="search" id="tsearch" placeholder="Search the cards" autocomplete="off">
+    <label class="sr-only" for="tsort">Sort by</label>
+    <select id="tsort">
+      <option value="due">Sort: deadline</option>
+      <option value="score">Sort: match score</option>
+      <option value="changed">Sort: recently changed</option>
+    </select>
+  </div>
+</div>
+<p class="small muted" id="tfilter-note" hidden>Only calls still to send are shown. <button type="button" class="linklike" onclick="setFilter('')">Show everything</button></p>
+
+<div class="tboard">
+  {% for s, label in states %}
+  <section class="tcol" aria-labelledby="col-{{ s }}">
+    <h2 id="col-{{ s }}">{{ label }} <span class="muted">{{ board[s] | length }}</span></h2>
+    {% if board[s] %}<ul class="tlist">{% for c in board[s] %}{% include "_todo_card.html" %}{% endfor %}</ul>
+    {% else %}<p class="small muted tcol-empty">{{ {'todo': 'Save a call in the feed and it appears here.', 'progress': 'Move a card here while you work on it.', 'done': 'Finished items and submitted applications.'}[s] }}</p>{% endif %}
+    <p class="small muted tcol-none" hidden>Nothing here matches.</p>
+  </section>
+  {% endfor %}
+</div>
+
+<h2>Add your own</h2>
+<form method="post" action="/todo/add" class="todo-add">
+  <div class="grow">
+    <label for="todo-text">What to do</label>
+    <input type="text" id="todo-text" name="text" required maxlength="300" placeholder="e.g. Shoot new photos of the installation">
+  </div>
+  <div>
+    <label for="todo-kind">For</label>
+    <select id="todo-kind" name="kind">{% for k, label in kinds %}<option value="{{ k }}" {{ 'selected' if k == 'portfolio' }}>{{ label }}</option>{% endfor %}</select>
+  </div>
+  <div>
+    <label for="todo-due">Date (optional)</label>
+    <input type="date" id="todo-due" name="due">
+  </div>
+  <div>
+    <label for="todo-call">Linked call (optional)</label>
+    <select id="todo-call" name="oid"><option value="">None</option>{% for oid, name in call_options %}<option value="{{ oid }}">{{ name[:60] }}</option>{% endfor %}</select>
+  </div>
+  <button class="btn primary">{{ icon('plus') }} Add</button>
+</form>
+{% endif %}
+
+<div class="bulk" id="bulk" hidden>
+  <span id="bulk-n" aria-live="polite"></span>
+  {% if deleted_view %}
+  <button class="btn primary" form="todo-bulk" name="action" value="restore">{{ icon('rotate-ccw') }} Restore</button>
+  {% else %}
+  {% for s, label in states %}<button class="btn" form="todo-bulk" name="action" value="{{ s }}">{{ icon({'todo': 'circle-dot', 'progress': 'clock', 'done': 'check'}[s]) }} {{ label }}</button>{% endfor %}
+  <button class="btn danger" form="todo-bulk" name="action" value="deleted">{{ icon('trash-2') }} Delete</button>
+  {% endif %}
+  <button class="btn ghost" type="button" onclick="clearSel()">{{ icon('x') }} Clear</button>
+</div>
+
+<script>
+  // Selecting: a click on a card (not on its menu, links, fields or documents)
+  // ticks its box; the bar acts on every selected card.
+  const bulk = document.getElementById("bulk"), boxes = () => [...document.querySelectorAll('.tcard > input[name="keys"]')];
+  function sync() {
+    const n = boxes().filter(b => b.checked).length;
+    boxes().forEach(b => b.closest(".tcard").classList.toggle("sel", b.checked));
+    bulk.hidden = !n;
+    document.getElementById("bulk-n").textContent = n + " selected";
+  }
+  function clearSel() { boxes().forEach(b => b.checked = false); sync(); }
+  document.addEventListener("change", e => { if (e.target.matches('.tcard > input[name="keys"]')) sync(); });
+  document.addEventListener("click", e => {
+    const c = e.target.closest(".tcard");
+    if (!c || e.target.closest("details, a, button, input, label, select, textarea, .tedit")) return;
+    const b = c.querySelector(':scope > input[name="keys"]'); b.checked = !b.checked; sync();
+  });
+
+  // Edit and note panel of one card
+  function openEdit(kid, show = true) {
+    const p = document.getElementById("edit-" + kid);
+    p.hidden = !show; closeMenus();
+    if (show) p.querySelector("input:not([type=hidden]), textarea")?.focus();
+  }
+
+  // Menus: one open at a time, floating next to their button (above it if
+  // there is no room below); a click elsewhere, Escape or scrolling closes them.
+  const closeMenus = () => document.querySelectorAll("details.menu[open]").forEach(d => d.open = false);
+  document.addEventListener("click", e => document.querySelectorAll("details.menu[open]").forEach(d => { if (!d.contains(e.target)) d.open = false; }));
+  document.addEventListener("keydown", e => { if (e.key === "Escape") document.querySelectorAll("details.menu[open]").forEach(d => { d.open = false; d.querySelector("summary").focus(); }); });
+  document.addEventListener("toggle", e => {
+    const d = e.target;
+    if (!d.matches?.("details.menu")) return;
+    const list = d.querySelector(".menu-list");
+    if (!d.open) { list.style.cssText = ""; return; }
+    const r = d.querySelector("summary").getBoundingClientRect(), h = list.offsetHeight;
+    const below = r.bottom + 4 + h <= innerHeight;
+    list.style.cssText = `position:fixed; right:${Math.max(8, innerWidth - r.right)}px; ` +
+      (below ? `top:${r.bottom + 4}px` : `top:${Math.max(8, r.top - 4 - h)}px`);
+  }, true);
+  addEventListener("scroll", closeMenus, { passive: true });
+
+  // Filter by what is missing, search, sort (kept in this browser)
+  let filter = "";
+  const search = document.getElementById("tsearch"), sortSel = document.getElementById("tsort");
+  function view() {
+    if (!sortSel) return;
+    const q = search.value.trim().toLowerCase(), key = sortSel.value;
+    document.querySelectorAll(".tcol").forEach(col => {
+      const list = col.querySelector(".tlist");
+      if (!list) return;
+      const cards = [...list.children];
+      cards.sort((a, b) => key === "due" ? a.dataset.due.localeCompare(b.dataset.due)
+        : key === "score" ? b.dataset.score - a.dataset.score : b.dataset.changed.localeCompare(a.dataset.changed));
+      cards.forEach(c => { list.append(c); c.hidden = (filter && c.dataset.group !== filter) || (q && !c.dataset.text.includes(q)); });
+      col.querySelector(".tcol-none").hidden = cards.some(c => !c.hidden) || !cards.length;
+    });
+    document.getElementById("tfilter-note").hidden = !filter;
+  }
+  function setFilter(g) {
+    filter = g;
+    document.querySelectorAll(".tfilter .btn").forEach(b => { const on = b.dataset.filter === g; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); });
+    view();
+  }
+  document.querySelectorAll(".tfilter .btn").forEach(b => b.addEventListener("click", () => setFilter(b.dataset.filter)));
+  search?.addEventListener("input", view);
+  sortSel?.addEventListener("change", () => { try { localStorage.setItem("todo-sort", sortSel.value); } catch (e) {} view(); });
+  try { const s = localStorage.getItem("todo-sort"); if (s && sortSel) sortSel.value = s; } catch (e) {}
+  // a card that comes back after a change (a document ticked) keeps the view
+  document.body.addEventListener("htmx:afterSwap", view);
+  view(); sync();
+</script>
+{% endblock %}

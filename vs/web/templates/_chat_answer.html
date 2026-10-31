@@ -1,7 +1,8 @@
 {# The app's answer to one question: it replaces the "searching" dots under
    the question. Every word below comes from the app, not the model. #}
   <div class="chat-a answer">
-    <h2>{{ a.title }}</h2>
+    {% if reply_url %}<div class="chat-reply pending" hx-get="{{ reply_url }}" hx-trigger="load" hx-swap="outerHTML" aria-label="Writing a reply"><span class="dots"><i></i><i></i><i></i></span></div>{% endif %}
+    {% if a.title %}<h2>{{ a.title }}</h2>{% endif %}
     {% if a.chips %}<p class="chips" aria-label="What was searched">{% for c in a.chips %}<span class="chip">{{ c }}</span>{% endfor %}</p>{% endif %}
     {% if a.note %}<p class="small muted">{{ a.note }}</p>{% endif %}
 
@@ -12,19 +13,30 @@
       </ol>
       <p class="small muted">Numbers let you act on them: “save 1 and 3”, “dismiss 2, not my field”.</p>
       {% endif %}
+      {% if a.check %}{% set many = a.check | length > 1 %}
+      {# a question naming sites the app reads: offer to read them now (again, if something is saved) #}
+      <div class="chat-check">
+        {% if a.rows %}<p class="small muted">Saved at the last refresh. To be sure nothing new is up, check {{ 'their sites' if many else 'their site' }} again now.</p>
+        {% else %}<p>Nothing saved about {{ a.check[0].name if not many else (a.check | length) ~ ' sites named in your question' }} yet. Check {{ 'their sites' if many else 'their site' }} now?</p>{% endif %}
+        <p class="chat-examples">
+          <button class="btn {{ 'primary' if not a.rows }}" hx-post="/chat/check" hx-vals='{{ {"ids": a.check | map(attribute="id") | join("|"), "chat_id": chat_id, "turn": turn} | tojson }}' hx-target="closest .chat-check" hx-swap="outerHTML" hx-disabled-elt="this">{{ icon('scan-search') }} {{ 'Check all ' ~ (a.check | length) if many else 'Check now' }}</button>
+          {% if many %}{% for s in a.check %}<button class="btn" hx-post="/chat/check" hx-vals='{{ {"ids": s.id, "chat_id": chat_id, "turn": turn} | tojson }}' hx-target="closest .chat-check" hx-swap="outerHTML" hx-disabled-elt="this">{{ s.name }}</button>{% endfor %}{% endif %}
+        </p>
+      </div>
+      {% endif %}
       {% if a.loosen %}
       <p>There are some if you search</p>
       <div class="chat-examples">
         {% for label, n, p in a.loosen %}<button class="btn" type="button" onclick='ask({{ (q or "") | tojson }}, {{ p | tojson | tojson }})'>{{ label }} · {{ n }}</button>{% endfor %}
       </div>
       {% endif %}
-      {% if a.feed_link %}<p><a class="btn ghost" href="{{ a.feed_link }}">Open in the feed with these filters</a></p>{% endif %}
+      {% if a.feed_link %}<p><a class="btn ghost" href="{{ a.feed_link }}">{{ icon('newspaper') }} Open in the feed with these filters</a></p>{% endif %}
 
     {% elif a.kind == 'sources' %}
       {% if a.rows %}
       <table>
         <thead><tr><th>Source</th><th>Kind</th><th>Open items</th><th>Last read</th></tr></thead>
-        {% for s in a.rows %}<tr><td><a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.name }} ↗</a></td><td class="muted">{{ s.kind }}</td><td>{{ s.open }}</td><td class="muted">{{ s.last_ok or '—' }}</td></tr>{% endfor %}
+        {% for s in a.rows %}<tr><td><a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.name }} {{ icon('external-link', 14) }}</a></td><td class="muted">{{ s.kind }}</td><td>{{ s.open }}</td><td class="muted">{{ s.last_ok or '—' }}</td></tr>{% endfor %}
       </table>
       {% endif %}
       <p><a class="btn ghost" href="/sources">All sources</a></p>
@@ -33,8 +45,8 @@
       {% if a.rows %}
       <table>
         <thead><tr><th>Studio</th><th>Where</th><th>Kind of work</th><th>Jobs page</th></tr></thead>
-        {% for s in a.rows %}<tr><td><a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.name }} ↗</a></td><td class="muted">{{ s.city }}{{ ', ' if s.city and s.country }}{{ s.country }}</td>
-          <td class="muted">{{ (s.types or []) | join(', ') }}</td><td>{% if s.jobs_url %}<a href="{{ s.jobs_url }}" target="_blank" rel="noopener">jobs ↗</a>{% endif %}</td></tr>{% endfor %}
+        {% for s in a.rows %}<tr><td><a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.name }} {{ icon('external-link', 14) }}</a></td><td class="muted">{{ s.city }}{{ ', ' if s.city and s.country }}{{ s.country }}</td>
+          <td class="muted">{{ (s.types or []) | join(', ') }}</td><td>{% if s.jobs_url %}<a href="{{ s.jobs_url }}" target="_blank" rel="noopener">jobs {{ icon('external-link', 14) }}</a>{% endif %}</td></tr>{% endfor %}
       </table>
       {% endif %}
       <p><a class="btn ghost" href="/studios">All studios</a></p>
@@ -51,10 +63,13 @@
         {% if a.confirm.action == 'refresh' %}
         <form method="post" action="/refresh"><button class="btn primary">Yes, search my sources</button></form>
         {% else %}
-        <button class="btn primary" hx-post="/chat/do" hx-vals='{{ {"payload": a.confirm | tojson} | tojson }}' hx-target="closest .chat-confirm" hx-swap="outerHTML" hx-disabled-elt="this">Yes, do it</button>
+        <button class="btn primary" hx-post="/chat/do" hx-vals='{{ {"payload": a.confirm | tojson, "chat_id": chat_id, "turn": turn} | tojson }}' hx-target="closest .chat-confirm" hx-swap="outerHTML" hx-disabled-elt="this">Yes, do it</button>
         {% endif %}
-        <button class="btn ghost" type="button" onclick="cancelConfirm(this)">Cancel</button>
+        <button class="btn ghost" type="button" hx-post="/chat/do" hx-vals='{{ {"payload": {"action": "cancel"} | tojson, "chat_id": chat_id, "turn": turn} | tojson }}' hx-target="closest .chat-confirm" hx-swap="outerHTML">Cancel</button>
       </div>
+
+    {% elif a.kind == 'talk' %}
+      {# a follow-up about what is on screen: the reply above is the answer #}
 
     {% else %}
       <ul class="plain">
@@ -66,4 +81,3 @@
       </ul>
     {% endif %}
   </div>
-<input type="hidden" name="last" id="chat-last" value="{{ shown }}" hx-swap-oob="true">

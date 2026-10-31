@@ -110,12 +110,20 @@ CREATE TABLE IF NOT EXISTS run (
 );
 
 CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);
+
+CREATE TABLE IF NOT EXISTS chat (
+  id INTEGER PRIMARY KEY, title TEXT, started TEXT, updated TEXT, turns TEXT DEFAULT '[]'
+);
+
+CREATE TABLE IF NOT EXISTS todo (
+  id INTEGER PRIMARY KEY, section TEXT, text TEXT, created TEXT, state TEXT DEFAULT 'todo', due TEXT, oid INTEGER, note TEXT
+);
 """
 
 JSON_COLUMNS = {
     "source_urls", "application_languages", "conditions", "eligibility", "required_docs",
     "submission", "other_dates", "field_confidence", "reasons", "similar_examples",
-    "red_flags", "suggested_projects", "eligibility_notes", "counts", "items_history", "links",
+    "red_flags", "suggested_projects", "eligibility_notes", "counts", "items_history", "links", "turns",
 }
 
 
@@ -141,6 +149,10 @@ def _migrate(conn) -> None:
         conn.execute("ALTER TABLE opportunity ADD COLUMN extract_version TEXT")
     if "hidden_reason" not in cols:
         conn.execute("ALTER TABLE opportunity ADD COLUMN hidden_reason TEXT")
+    todo_cols = {r["name"] for r in conn.execute("PRAGMA table_info(todo)")}
+    for col, decl in (("state", "TEXT DEFAULT 'todo'"), ("due", "TEXT"), ("oid", "INTEGER"), ("note", "TEXT")):
+        if col not in todo_cols:  # columns added as the to-do board grew
+            conn.execute(f"ALTER TABLE todo ADD COLUMN {col} {decl}")
     if "tiebreak" not in {r["name"] for r in conn.execute("PRAGMA table_info(match)")}:
         conn.execute("ALTER TABLE match ADD COLUMN tiebreak REAL")  # source and region: order only, not the score
 

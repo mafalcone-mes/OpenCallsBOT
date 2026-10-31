@@ -3,13 +3,13 @@
 {% block main %}
 <div style="display:flex; align-items:baseline; gap:16px; flex-wrap:wrap">
   <h1>{{ month.strftime('%B %Y') }}</h1>
-  <a class="btn" href="?month={{ prev_m }}&scope={{ scope }}" aria-label="Previous month">←</a>
+  <a class="btn" href="?month={{ prev_m }}&scope={{ scope }}" aria-label="Previous month">{{ icon('chevron-left') }}</a>
   <a class="btn" href="?scope={{ scope }}">Today</a>
-  <a class="btn" href="?month={{ next_m }}&scope={{ scope }}" aria-label="Next month">→</a>
+  <a class="btn" href="?month={{ next_m }}&scope={{ scope }}" aria-label="Next month">{{ icon('chevron-right') }}</a>
   <span style="margin-left:auto; display:flex; gap:8px; flex-wrap:wrap">
     <a class="btn {{ 'on' if scope != 'all' }}" {{ 'aria-current=true' if scope != 'all' }} href="?month={{ month.strftime('%Y-%m') }}&scope=tracked">Saved + applications</a>
     <a class="btn {{ 'on' if scope == 'all' }}" {{ 'aria-current=true' if scope == 'all' }} href="?month={{ month.strftime('%Y-%m') }}&scope=all">All open</a>
-    <a class="btn" href="/calendar.ics?scope={{ scope }}">Export .ics</a>
+    <a class="btn" href="/calendar.ics?scope={{ scope }}">{{ icon('download') }} Export .ics</a>
   </span>
 </div>
 <div class="cal">

@@ -16,39 +16,39 @@
 {% set dl = present.days_left(o.deadline) %}
 {% set dl_main, dl_when = present.deadline_parts(o.deadline, o.deadline_kind) %}
 {% set elig = [('age ' ~ (el.age_min or '') ~ '–' ~ (el.age_max or '')) if (el.age_min or el.age_max) else '', (el.nationalities or []) | join(', '), ('residence ' ~ (el.residence or []) | join(', ')) if el.residence else '', el.education or '', el.career_stage or ''] | select | join(' · ') %}
-<p class="small muted"><a href="javascript:history.back()">← Back</a></p>
+<p class="small muted"><a class="with-icon" href="javascript:history.back()">{{ icon('chevron-left', 14) }}Back</a></p>
 <h1 class="detail-title">{{ o.title_en or o.title_original }}</h1>
 {% if o.title_original and o.title_original != o.title_en %}<p class="muted">{{ o.title_original }}</p>{% endif %}
-<p class="lede">{{ o.org_name or 'Organisation unclear' }} · {{ present.TYPE_LABELS.get(o.type, o.type) }}</p>
+<p class="lede">{{ o.org_name or 'Organisation unclear' }} · <span class="with-icon">{{ icon(present.TYPE_ICONS.get(o.type, 'circle-dot')) }}{{ present.TYPE_LABELS.get(o.type, o.type) }}</span></p>
 
 <dl class="keyfacts">
   <div class="kf deadline {{ 'closed' if dl is not none and dl < 0 else 'soon' if dl is not none and dl <= 14 }}">
-    <dt>Deadline</dt>
+    <dt class="with-icon">{{ icon('clock', 14) }}Deadline</dt>
     <dd><strong>{{ dl_main }}</strong>{% if dl_when %}<span>{{ checked(dl_when, 'deadline') }}</span>{% endif %}</dd>
   </div>
   <div class="kf">
-    <dt>Who can apply</dt>
+    <dt class="with-icon">{{ icon('check', 14) }}Who can apply</dt>
     <dd>{% if o.eligibility_flag == 'likely_ineligible' %}<strong class="err">Likely not you</strong>
         {% elif o.eligibility_flag == 'check' %}<strong class="warn">Check</strong>
         {% elif elig %}<strong>Open to you</strong>{% else %}<strong>No limits found</strong>{% endif %}
         {% if o.eligibility_notes %}<span>{{ o.eligibility_notes | join('; ') }}</span>{% elif elig %}<span>{{ checked(elig, 'eligibility') }}</span>{% endif %}</dd>
   </div>
   <div class="kf">
-    <dt>What you get</dt>
+    <dt class="with-icon">{{ icon('banknote', 14) }}What you get</dt>
     <dd><strong>{{ checked(present.money_badge(cond), 'money_kind') }}</strong>
         {% if cond.amount %}<span>{{ checked(present.money(cond.amount, cond.currency) ~ (' / ' ~ cond.period if cond.period else ''), 'amount') }}</span>{% endif %}
         {% if cond.application_fee %}<span class="err">Application fee {{ checked(present.money(cond.application_fee, cond.currency), 'application_fee') }}</span>{% endif %}</dd>
   </div>
   <div class="kf">
-    <dt>Where</dt>
+    <dt class="with-icon">{{ icon('map-pin', 14) }}Where</dt>
     <dd><strong>{{ present.location(o) or 'Not stated' }}</strong>{% if o.duration_text or o.start_date %}<span>{{ ((o.start_date or '') ~ ' ' ~ (o.duration_text or '')) | trim }}</span>{% endif %}</dd>
   </div>
 </dl>
 
 <div class="actions">
-  <a class="btn primary" href="{{ o.canonical_url }}" target="_blank" rel="noopener">Open the call ↗</a>
+  <a class="btn primary" href="{{ o.canonical_url }}" target="_blank" rel="noopener">Open the call {{ icon('external-link', 14) }}</a>
   {{ present.save_button(o.id, o.favourite) | safe }}
-  <a class="btn ghost" href="/o/{{ o.id }}.ics">Add deadline to calendar</a>
+  <a class="btn ghost" href="/o/{{ o.id }}.ics">{{ icon('calendar') }} Add deadline to calendar</a>
 </div>
 <p class="small muted url">{{ o.canonical_url }}</p>
 {% if o.source_urls and o.source_urls | length > 1 %}<p class="small muted">Also listed at: {% for u in o.source_urls %}{% if u != o.canonical_url %}<a href="{{ u }}" target="_blank" rel="noopener">{{ u[:70] }}</a> {% endif %}{% endfor %}</p>{% endif %}

@@ -1,24 +1,27 @@
 {% extends "base.html" %}
-{% block title %}Ask{% endblock %}
+{% block title %}{{ chat.title if chat else 'Ask' }}{% endblock %}
 {% block main %}
 {# As in AI chat apps: an empty page with the box in the middle; at the first
    question the box slides to the bottom and the conversation takes the space. #}
-<div class="ask" id="ask" data-state="empty">
+<div class="ask" id="ask" data-state="{{ 'chat' if chat else 'empty' }}">
   <div class="ask-hero">
     <h1>What are you looking for?</h1>
     <p class="muted">Opportunities, your saved ones, sources, studios or your projects. Every answer comes from the app's own data.</p>
   </div>
 
-  <div class="chat" id="thread"></div>
+  <div class="chat" id="thread">
+    {% if chat %}{% for t in chat.turns %}<div class="chat-turn"><p class="chat-q">{{ t.q }}</p>{{ t.html | safe }}</div>{% endfor %}{% endif %}
+  </div>
   <p class="sr-only" id="chat-status" role="status" aria-live="polite"></p>
 
   <form class="ask-box" id="chat-form" hx-post="/chat/ask" hx-target="#chat-pending" hx-swap="outerHTML">
     <label for="chat-q" class="sr-only">Your question</label>
     <textarea id="chat-q" name="q" rows="1" required autocomplete="off" placeholder="Ask anything…"></textarea>
-    <input type="hidden" name="last" id="chat-last" value="">
+    <input type="hidden" name="last" id="chat-last" value="{{ chat.turns[-1].shown if chat and chat.turns else '' }}">
+    <input type="hidden" name="chat_id" id="chat-id" value="{{ chat.id if chat else '' }}">
     <input type="hidden" name="plan" value="">
     <button class="ask-send" type="submit" aria-label="Ask" disabled>
-      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      {{ icon('arrow-up', 20) }}
     </button>
   </form>
   <p class="ask-hint small muted">Enter to ask · Shift + Enter for a new line</p>
@@ -75,7 +78,10 @@
     if (e.detail.successful) { box.value = ""; form.plan.value = ""; fit(); box.focus(); }
     else { const p = document.getElementById("chat-pending"); if (p) { p.className = "chat-a"; p.textContent = "That didn't work. Is the app still running? Try again."; p.removeAttribute("id"); } }
   });
-  document.body.addEventListener("htmx:afterSwap", () => {
+  // Only a new answer moves the page: other updates (the refresh progress
+  // every few seconds, Save buttons) must leave the reader where they are.
+  document.body.addEventListener("htmx:afterSwap", e => {
+    if ((e.detail.requestConfig?.elt || e.detail.elt) !== form) return;
     const last = thread.lastElementChild;
     const title = last?.querySelector(".answer h2");
     if (title) document.getElementById("chat-status").textContent = title.textContent;  // "17 found", not the whole list
@@ -84,10 +90,8 @@
 
   // Example and "try …" buttons ask a question (or run a ready plan) through the same box.
   function ask(text, plan) { box.value = text; form.plan.value = plan || ""; fit(); htmx.trigger(form, "submit"); }
-  function cancelConfirm(btn) {
-    const p = document.createElement("p"); p.className = "chat-done"; p.textContent = "Cancelled: nothing changed.";
-    btn.closest(".chat-confirm").replaceWith(p);
-  }
+  // A saved chat opens at its last answer, ready for the next question.
+  if (askEl.dataset.state === "chat") thread.lastElementChild?.scrollIntoView({ block: "start" });
   box.focus();
 </script>
 {% endblock %}

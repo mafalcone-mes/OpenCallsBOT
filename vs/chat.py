@@ -23,8 +23,9 @@ import numpy as np
 from vs import db, embed, llm, present, report
 from vs.config import prefs
 
-PLAN_VERSION = 3
-INTENTS = ["search", "near_project", "sources", "studios", "projects", "action", "help"]
+PLAN_VERSION = 4
+INTENTS = ["search", "near_project", "sources", "studios", "projects", "action", "talk", "help"]
+HISTORY = 4  # earlier turns of the same chat the model sees
 ACTIONS = ["", "save", "unsave", "dismiss", "set_status", "refresh"]
 TARGETED = {"save", "unsave", "dismiss", "set_status"}
 SHOW = 10  # results shown per answer
@@ -72,7 +73,13 @@ intent:
 - projects: the person's own portfolio projects.
 - action: they ask to save, unsave, dismiss or change the application status of results already shown
   ("the first two" -> targets [1, 2]; "all" -> every number shown), or to start a new search of the sources (action refresh).
-- help: greetings, questions about what the app can do, anything else.
+- talk: a question about results already shown, not a new search ("why the second one?", "which fits me best?",
+  "tell me more about 3", "compare 1 and 2"), or plain conversation ("thanks", "what should I do first?").
+- help: greetings, questions about what the app can do.
+
+Earlier questions of the same chat may come first. When the new question is a follow-up ("and in Germany?",
+"only the paid ones", "e quelli online?"), the plan keeps what the earlier question asked and changes only what
+the new one changes. When it is a new subject, ignore the earlier questions.
 
 Fields (leave empty: "", [], 0, false when not asked):
 - words: exact words or names they want to find in the text, only when they name a specific word ("with the word X", "che contengono X", a place, an organisation).
@@ -97,9 +104,11 @@ def _project_list(portfolio) -> list[tuple[str, str]]:
     return [(p.slug, p.name) for p in getattr(portfolio, "projects", [])] if portfolio else []
 
 
-def plan_for(conn, question: str, portfolio, today: date | None = None, n_shown: int = 0) -> tuple[dict, str]:
-    """(plan, note). The plan is cached per question, day and model, so asking
-    again gives exactly the same plan even if the model would now say otherwise."""
+def plan_for(conn, question: str, portfolio, today: date | None = None, n_shown: int = 0,
+             history: list[str] | tuple = ()) -> tuple[dict, str]:
+    """(plan, note). The plan is cached per question, earlier questions, day and
+    model, so asking again gives exactly the same plan even if the model would
+    now say otherwise. `history`: the chat's earlier questions, oldest first."""
     today = today or date.today()
     q = normalise(question)
     if not q:
@@ -112,16 +121,22 @@ def plan_for(conn, question: str, portfolio, today: date | None = None, n_shown:
         model = llm.chat_model()
     except llm.LLMError as e:
         return ground(_fallback(q), question), f"The local model isn't available ({e}): I searched for the words instead."
-    key = "chatplan:" + hashlib.sha256(f"{PLAN_VERSION}|{model}|{today}|{q}|{[s for s, _ in projects]}".encode()).hexdigest()[:24]
+    history = [h for h in history if normalise(h)][-HISTORY:]
+    context = " ".join(history[-2:])  # a follow-up may keep what the last questions asked
+    key = "chatplan:" + hashlib.sha256(
+        f"{PLAN_VERSION}|{model}|{today}|{q}|{[normalise(h) for h in history]}|{[s for s, _ in projects]}".encode()).hexdigest()[:24]
     cached = db.kv_get(conn, key)
     if cached:
         return {**EMPTY_PLAN, **cached}, ""
     try:
-        plan = llm.chat_json(system_prompt(today, projects), question.strip(), schema([s for s, _ in projects]),
+        user = question.strip()
+        if history:
+            user = "Earlier questions in this chat, oldest first:\n" + "\n".join(f"- {h.strip()}" for h in history) + f"\n\nNew question: {user}"
+        plan = llm.chat_json(system_prompt(today, projects), user, schema([s for s, _ in projects]),
                              model=model, temperature=0.0, seed=7, max_tokens=400, purpose="chat")
     except llm.LLMError as e:
         return ground(_fallback(q), question), f"The local model didn't answer ({e}): I searched for the words instead."
-    plan = ground(clean({**EMPTY_PLAN, **plan}, today), question)
+    plan = ground(clean({**EMPTY_PLAN, **plan}, today), question, context=context)
     db.kv_set(conn, key, plan)
     return plan, ""
 
@@ -211,9 +226,13 @@ def _numbers(q: str, n_shown: int) -> list[int]:
     return sorted(set(nums))
 
 
-def ground(plan: dict, question: str, n_shown: int = 0) -> dict:
-    """Keep only what the question asks for (see the cue lists above)."""
+def ground(plan: dict, question: str, n_shown: int = 0, context: str = "") -> dict:
+    """Keep only what the question asks for (see the cue lists above). In a
+    follow-up, `context` (the earlier questions) may keep a field the model
+    carried over; what the app adds on its own comes from the question only."""
     q = " " + normalise(question) + " "
+    asked = q  # the new question alone
+    q = q + normalise(context) + " " if context else q
     # Actions are read from the words themselves: "salva la 1 e la 2" always means the same.
     for act, pattern in ACTION_CUES:
         if re.search(pattern, q) and (act == "refresh" or _numbers(q, n_shown) or plan.get("intent") == "action"):
@@ -225,7 +244,7 @@ def ground(plan: dict, question: str, n_shown: int = 0) -> dict:
             return plan
     plan["types"] = [t for t in plan.get("types") or [] if _has(q, TYPE_CUES.get(t, []))]
     if not plan["types"] and plan.get("intent") in ("search", "near_project"):
-        plan["types"] = [t for t in SURE_TYPES if _has(q, TYPE_CUES[t])]
+        plan["types"] = [t for t in SURE_TYPES if _has(asked, TYPE_CUES[t])]
     if plan.get("region") and not _has(q, REGION_CUES.get(plan["region"], [])):
         plan["region"] = ""
     if plan.get("country") and not _has(q, COUNTRY_CUES.get(plan["country"], [plan["country"].lower()])):
@@ -244,7 +263,8 @@ def ground(plan: dict, question: str, n_shown: int = 0) -> dict:
     if plan.get("deadline_before") and plan.get("within_days") and not re.search(r"\d", q):
         plan["within_days"] = 0  # "this month": one deadline, not two
     # Your own lists are named by a word in the question, whatever the model said.
-    plan["status"] = next((s for s, cues in STATUS_CUES.items() if _has(q, cues)), "")
+    plan["status"] = next((s for s, cues in STATUS_CUES.items() if _has(asked, cues)), "") or \
+        (plan.get("status") if plan.get("status") in STATUS_CUES and _has(q, STATUS_CUES[plan["status"]]) else "")
     # Words to find in the text must be in the question, and not be the kind,
     # place or list already filtered on ("residenze", "salvati").
     filtered = [c for cues in list(TYPE_CUES.values()) + list(STATUS_CUES.values()) + list(REGION_CUES.values()) for c in cues]
@@ -259,12 +279,12 @@ def ground(plan: dict, question: str, n_shown: int = 0) -> dict:
             words.append(w)
     # a city named in the question is a word to find, even if the model only set the country
     for it, en in CITY_NAMES.items():
-        if re.search(rf"\b{re.escape(it)}\b", q) and en not in words:
+        if re.search(rf"\b{re.escape(it)}\b", asked) and en not in words:
             words.append(en)
     plan["words"] = words[:5]
-    if plan.get("intent") in ("search", "help") and _has(q, SOURCE_CUES):
+    if plan.get("intent") in ("search", "help") and _has(asked, SOURCE_CUES):
         plan["intent"] = "sources"
-    elif plan.get("intent") in ("search", "help") and _has(q, STUDIO_CUES):
+    elif plan.get("intent") in ("search", "help") and _has(asked, STUDIO_CUES):
         plan["intent"] = "studios"
     if plan.get("intent") == "search" and plan.get("project"):
         plan["intent"] = "near_project"
@@ -299,6 +319,7 @@ class Answer:
     feed_link: str = ""
     loosen: list = field(default_factory=list)   # (label, n, plan) when nothing was found
     confirm: dict | None = None
+    check: list = field(default_factory=list)   # sites the question names, to read now when nothing was found
     plan: dict = field(default_factory=dict)
 
 
@@ -510,13 +531,21 @@ def action(conn, plan: dict, last: list[int]) -> Answer:
                            "app_status": plan.get("app_status") or ""}, plan=plan)
 
 
-def answer(conn, question: str, portfolio, last: list[int], plan: dict | None = None) -> tuple[Answer, str]:
+def answer(conn, question: str, portfolio, last: list[int], plan: dict | None = None,
+           history: list[str] | tuple = ()) -> tuple[Answer, str]:
     """Run one question (or a plan from a button) and return the answer."""
     note = ""
     if plan is None:
-        plan, note = plan_for(conn, question, portfolio, n_shown=len(last))
+        plan, note = plan_for(conn, question, portfolio, n_shown=len(last), history=history)
     intent = plan.get("intent")
-    if intent in ("search", "near_project"):
+    # "Is Accurat looking for someone?", "has the fablab open calls?": a question
+    # naming sites the app reads is about their openings, not about the source
+    # itself (unless it says "source") nor a general search.
+    named = named_sites(question) if question and (
+        intent in ("search", "help", "studios") or (intent == "sources" and not _has(" " + normalise(question) + " ", SOURCE_CUES))) else []
+    if named:
+        a = from_sites(conn, plan, named)
+    elif intent in ("search", "near_project"):
         a = search(conn, plan, portfolio)
     elif intent == "sources":
         a = sources(conn, plan)
@@ -526,8 +555,13 @@ def answer(conn, question: str, portfolio, last: list[int], plan: dict | None = 
         a = projects(plan, portfolio)
     elif intent == "action":
         a = action(conn, plan, last)
+    elif intent == "talk":  # about what is already on screen: the reply is the answer
+        rows = {r["id"]: r for r in report.feed_rows(conn, f"AND o.id IN ({','.join('?' * len(last))})", tuple(last), len(last))} if last else {}
+        a = Answer("talk", "", rows=[rows[i] for i in last if i in rows], plan=plan)
     else:
         a = Answer("help", "What I can do", plan=plan)
+    if a.kind == "opportunities" and not a.rows and question and not a.check:
+        a.check = named_sites(question)
     if note:
         a.note = (a.note + " " + note).strip()
     return a, json.dumps(plan, ensure_ascii=False, sort_keys=True)
@@ -553,3 +587,152 @@ def do(payload: dict) -> str:
     n = len(keys)
     return {"save": f"Saved {n}.", "unsave": f"Removed {n} from saved.", "dismiss": f"Dismissed {n}. The feed learns from it.",
             "set_status": f"Status set on {n}."}.get(act, "Done.")
+
+
+# ---------------------------------------------------------------- the reply
+
+REPLY_SYSTEM = """You are the assistant of an app that finds jobs, residencies, open calls and grants for one artist/designer.
+The app has already answered the question with the FACTS below (its search results or its own data). Write a short reply
+to the person, 2 to 4 sentences, like a helpful colleague: what was found, which result looks most promising and why,
+or a direct answer to their follow-up question, and one useful next step or question to ask.
+
+Rules:
+- Use only the FACTS and the earlier conversation. Never invent calls, organisations, dates, places, money or requirements.
+- Refer to results by their number, like #2. If the facts don't answer the question, say so plainly.
+- Don't repeat the whole list: the person sees it under your reply.
+- Write in the language of the person's last question (Italian or English). Plain text, no markdown, no lists."""
+
+
+def _row_facts(n: int, r: dict, full: bool) -> str:
+    parts = [f"#{n} {r.get('title_en') or r.get('title_original') or ''}"]
+    for label, v in (("organisation", r.get("org_name")), ("kind", present.TYPE_LABELS.get(r.get("type") or "", r.get("type"))),
+                     ("where", ", ".join(x for x in (r.get("location_city"), r.get("location_country")) if x)),
+                     ("deadline", present.deadline_label(r.get("deadline") or "", r.get("deadline_kind") or "")),
+                     ("money", present.money_badge(r.get("conditions"))),
+                     ("how well it fits the person's work, by the app's score", f"{round(r['final'] * 100)}/100" if isinstance(r.get("final"), (int, float)) else ""),
+                     ("summary", (r.get("summary_en") or "")[:700 if full else 220])):
+        if v:
+            parts.append(f"{label}: {v}")
+    if full:
+        for label, k in (("who can apply", "eligibility"), ("conditions", "conditions"), ("documents asked", "required_docs")):
+            if r.get(k):
+                parts.append(f"{label}: {json.dumps(r[k], ensure_ascii=False)[:500]}")
+    return "; ".join(parts)
+
+
+def facts(a: Answer) -> str:
+    """What the app answered, in words the model can lean on."""
+    lines = [a.title] if a.title else []
+    if a.chips:
+        lines.append("Searched for: " + ", ".join(a.chips))
+    if a.note:
+        lines.append(a.note)
+    if a.kind in ("opportunities", "talk", "confirm"):
+        lines += [_row_facts(i, r, a.kind == "talk") for i, r in enumerate(a.rows, 1)]
+        if a.kind == "talk" and not a.rows:
+            lines.append("No results are on screen in this chat yet.")
+        if a.check:
+            lines.append(("The results above are what the app saved from " if a.rows else "Nothing saved about ")
+                         + ", ".join(s["name"] for s in a.check)
+                         + ". Under your reply the person can ask the app to read their site(s) again now.")
+        if a.loosen:
+            lines.append("Nothing matched; with one filter less there would be: " + ", ".join(f"{l} ({n})" for l, n, _ in a.loosen))
+    elif a.kind == "sources":
+        lines += [f"{s['name']} ({s['kind']}, {s['open']} open)" for s in a.rows]
+    elif a.kind == "studios":
+        lines += [f"{s['name']}, {s.get('city', '')} {s.get('country', '')}: {', '.join(s.get('types') or [])}" for s in a.rows]
+    elif a.kind == "projects":
+        lines += [f"{p['name']} ({p.get('year', '')}): {', '.join(p.get('categories') or [])}" for p in a.rows]
+    elif a.kind == "help":
+        lines.append("The app can: find opportunities by kind, place, deadline, money or words; find what is close to a "
+                     "portfolio project; show saved ones and applications; list sources and studios; save, dismiss or "
+                     "set the status of results shown, after confirmation.")
+    return "\n".join(lines)
+
+
+def reply(question: str, history: list[tuple[str, str]], fact_text: str) -> str:
+    """2-4 sentences on top of the app's answer; "" if the model is away."""
+    convo = "".join(f"Person: {q}\nYou: {r}\n" for q, r in history[-HISTORY:])
+    user = (f"EARLIER CONVERSATION\n{convo}\n" if convo else "") + f"FACTS\n{fact_text}\n\nPERSON'S QUESTION\n{question}"
+    try:
+        out = llm.chat_json(REPLY_SYSTEM, user, {"type": "object", "properties": {"reply": {"type": "string", "maxLength": 900}},
+                                                 "required": ["reply"]},
+                            temperature=0.2, seed=7, max_tokens=350, purpose="chat")
+    except llm.LLMError:
+        return ""
+    return (out.get("reply") or "").strip()
+
+
+# ---------------------------------------------------------------- named sites
+
+# Words that don't tell one organisation from another ("Fondazione", "Studio",
+# a city), so a name is matched on its own words ("Prada", "Accurat").
+NAME_GENERIC = {
+    "studio", "studios", "design", "museum", "museo", "musee", "foundation", "fondazione", "fondation", "fundacion", "stichting",
+    "gallery", "galleria", "school", "scuola", "academy", "accademia", "akademie", "center", "centre", "centro", "zentrum",
+    "open", "call", "calls", "jobs", "lavoro", "lavori", "careers", "the", "and", "for", "art", "arts", "arte", "kunst",
+    "residency", "residenze", "residencies", "festival", "institute", "istituto", "institut", "university", "universita",
+    "network", "project", "projects", "international", "european", "europe", "italia", "italy", "contemporary",
+    "contemporanea", "contemporaneo", "cultural", "culture", "cultura", "media", "digital", "science", "research",
+    "ricerca", "biennale", "kunsthalle", "society", "association", "associazione", "national", "nazionale", "city",
+    "house", "casa", "park", "parco", "space", "spazio", "watch", "photo", "photography", "fotografia", "new", "grant",
+    "grants", "programme", "program", "news", "feed", "bando", "bandi", "www", "https", "http",
+}
+NAME_GENERIC |= {c.strip() for cues in COUNTRY_CUES.values() for c in cues} | {k for k in CITY_NAMES} | {v.lower() for v in CITY_NAMES.values()}
+
+
+def _words(text: str) -> list[str]:
+    import unicodedata
+    t = unicodedata.normalize("NFKD", text.lower())
+    return re.findall(r"[a-z0-9]+", "".join(c for c in t if not unicodedata.combining(c)))
+
+
+def _site_keys(*names: str) -> set[str]:
+    """How a site can be named: its whole name run together ("fablabbarcelona"),
+    its first two words ("fablab"), and its distinctive words ("accurat")."""
+    keys = set()
+    for name in names:
+        w = _words(re.sub(r"\(.*?\)", " ", name or ""))  # "(workshops)" says what is read there, not who
+        if not w:
+            continue
+        keys.add("".join(w))
+        if len(w) > 1 and len("".join(w[:2])) >= 5:
+            keys.add("".join(w[:2]))
+        keys |= {x for x in w if len(x) >= 5 and x not in NAME_GENERIC and not x.isdigit()}
+    return {k for k in keys if len(k) >= 4 and k not in NAME_GENERIC}
+
+
+def from_sites(conn, plan: dict, sites: list[dict]) -> Answer:
+    """What the app has from the named sites; you can have them read again now."""
+    ids = [s["id"] for s in sites]
+    rows = report.feed_rows(conn, f"AND o.source_id IN ({','.join('?' * len(ids))})", tuple(ids), 300)
+    names = ", ".join(s["name"] for s in sites[:3]) + (f" and {len(sites) - 3} more" if len(sites) > 3 else "")
+    a = Answer("opportunities", f"{len(rows)} open from {names}" if rows else f"Nothing saved from {names}",
+               [f"from {names}"], rows[:SHOW], plan=plan, check=sites)
+    if len(rows) > SHOW:
+        a.title += f", the best {SHOW} first"
+    return a
+
+
+def all_sites() -> list[dict]:
+    """Every source and watched page, and every studio with a jobs page
+    (read once when asked; excluded sites are never here)."""
+    from vs import studios as studios_mod
+    p = prefs()
+    out = [{"kind": "source", "id": sid, "name": cfg.get("org") or cfg.get("name") or sid, "url": cfg.get("url", ""),
+            "keys": _site_keys(sid.replace("-", " "), cfg.get("org") or "", cfg.get("name") or "")}
+           for sid, cfg in p.get("sources", {}).items() if cfg.get("enabled", True)]
+    out += [{"kind": "source", "id": f"watch:{w['name']}", "name": w["name"], "url": w["url"], "keys": _site_keys(w["name"])}
+            for w in p.get("watchlist", []) if w.get("enabled", True)]
+    watched = {s["url"] for s in out}
+    out += [{"kind": "studio", "id": f"watch:{s['name']}", "name": s["name"], "url": s["jobs_url"], "keys": _site_keys(s["name"])}
+            for s in studios_mod.load() if s.get("jobs_url") and s["jobs_url"] not in watched]
+    return out
+
+
+def named_sites(question: str) -> list[dict]:
+    """The sites a question names: "is Accurat hiring?" -> Accurat; "fablab"
+    -> every Fab Lab. Matched on single words and on 2-3 words run together."""
+    w = _words(question)
+    grams = set(w) | {"".join(w[i:i + n]) for n in (2, 3) for i in range(len(w) - n + 1)}
+    return [{k: v for k, v in site.items() if k != "keys"} for site in all_sites() if site["keys"] & grams]

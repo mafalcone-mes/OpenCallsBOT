@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}All chats{% endblock %}
+{% block main %}
+<h1>All chats</h1>
+<p class="lede">Every question you asked, newest first. Open one to read it again or keep asking.</p>
+{% if all_chats %}
+<ul class="chat-list">
+  {% for c in all_chats %}
+  <li>
+    <a href="/chat/{{ c.id }}"><span>{{ c.title }}</span><span class="small muted">{{ (c.updated or '')[:16] | replace('T', ' ') }}</span></a>
+    <form method="post" action="/chat/{{ c.id }}/delete"><button class="btn ghost" aria-label="Delete the chat “{{ c.title }}”">{{ icon('trash-2') }} Delete</button></form>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted" style="margin-top:var(--s-24)">No chats yet. <a href="/">Ask something</a>.</p>
+{% endif %}
+{% endblock %}

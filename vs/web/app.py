@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from vs import db, expiry, llm, pipeline, present, references
+from vs import chatlog, db, expiry, llm, pipeline, present, references, todo
 from vs import portfolio as portfolio_mod
 from vs import config
 from vs.config import prefs, update_prefs
@@ -42,6 +42,8 @@ def static_url(name: str) -> str:
 
 
 templates.env.globals.update(static_url=static_url)
+from vs.web.icons import icon  # noqa: E402
+templates.env.globals.update(icon=icon)
 
 STATUSES = present.STATUSES
 DISMISS_REASONS = present.DISMISS_REASONS
@@ -64,7 +66,10 @@ def ctx(request: Request, **kw) -> dict:
             "SELECT COUNT(*) c FROM opportunity o JOIN user_state u ON u.opportunity_key=o.dedup_key "
             "WHERE o.status='open' AND (u.favourite=1 OR u.app_status IS NOT NULL) AND o.deadline != '' "
             "AND o.deadline BETWEEN date('now') AND date('now', '+7 day')").fetchone()["c"]
-        recent = _recent(conn)
+        chats = chatlog.recent(conn)
+        chats_total = chatlog.count(conn)
+        todo_open = todo.open_count(conn)
+        alert = _deadline_alert(conn, request)
     days = None
     if last:
         days = (date.today() - date.fromisoformat(last[:10])).days
@@ -72,30 +77,23 @@ def ctx(request: Request, **kw) -> dict:
     labels = {c.id: c.label for c in p.categories} if not isinstance(p, Exception) else {}
     tokens = p.css_tokens if not isinstance(p, Exception) else {}
     return {"request": request, "portfolio": p, "last_refresh_days": days, "deadlines_week": soon,
-            "last_visit": last_visit, "recent": recent, "cat_colors": colors, "cat_labels": labels, "tokens": tokens,
+            "last_visit": last_visit, "chats": chats, "chats_total": chats_total, "todo_open": todo_open,
+            "deadline_alert": alert, "cat_colors": colors, "cat_labels": labels, "tokens": tokens,
             "progress": pipeline.progress_state(), "prefs_error": config.prefs_error, "sheet_error": prefs().get("_sheet_error"), **kw}
 
 
-RECENT_MAX = 12
-
-
-def _recent(conn) -> list[dict]:
-    """The calls you opened last, newest first, for the side bar."""
-    ids = db.kv_get(conn, "recent_views") or []
-    if not ids:
+def _deadline_alert(conn, request: Request) -> list[dict]:
+    """Saved calls closing within a week, shown in a pop-up on the first page
+    you open each day (never inside an htmx update)."""
+    if request.headers.get("hx-request"):
         return []
-    rows = {r["id"]: db.row_dict(r) for r in conn.execute(
-        f"SELECT id, title_en, title_original, org_name, deadline, deadline_kind FROM opportunity WHERE id IN ({','.join('?' * len(ids))})", ids)}
-    return [rows[i] for i in ids if i in rows]
-
-
-def _remember_view(oid: int) -> None:
-    try:
-        with db.session() as conn:
-            ids = [oid] + [i for i in (db.kv_get(conn, "recent_views") or []) if i != oid]
-            db.kv_set(conn, "recent_views", ids[:RECENT_MAX])
-    except sqlite3.OperationalError:
-        pass  # a busy database never fails the page
+    today = date.today().isoformat()
+    if db.kv_get(conn, "deadline_alert_day") == today:
+        return []
+    rows = todo.closing_soon(conn)
+    if rows:
+        db.kv_set(conn, "deadline_alert_day", today)
+    return rows
 
 
 def _mark_visit() -> None:
@@ -161,11 +159,35 @@ def _feed_tabs(conn, where: str, params: list, since: str = "") -> list[dict]:
 def home(request: Request):
     """The chat: ask the app about its opportunities, sources, studios and
     your portfolio (vs/chat.py)."""
-    return templates.TemplateResponse(request, "chat.html", ctx(request, view="chat"))
+    return templates.TemplateResponse(request, "chat.html", ctx(request, view="chat", chat=None))
+
+
+@app.get("/chat/{cid}", response_class=HTMLResponse)
+def chat_page(request: Request, cid: int):
+    """A saved chat, to read again or continue."""
+    with db.session() as conn:
+        c = chatlog.get(conn, cid)
+    if not c:
+        return RedirectResponse("/", 303)
+    return templates.TemplateResponse(request, "chat.html", ctx(request, view="chat", chat=c))
+
+
+@app.get("/chats", response_class=HTMLResponse)
+def chats_page(request: Request):
+    with db.session() as conn:
+        rows = chatlog.recent(conn, None)
+    return templates.TemplateResponse(request, "chats.html", ctx(request, view="chats", all_chats=rows))
+
+
+@app.post("/chat/{cid}/delete")
+def chat_delete(request: Request, cid: int):
+    with db.session() as conn:
+        chatlog.delete(conn, cid)
+    return RedirectResponse("/chats", 303)
 
 
 @app.post("/chat/ask", response_class=HTMLResponse)
-def chat_ask(request: Request, q: str = Form(""), last: str = Form(""), plan: str = Form("")):
+def chat_ask(request: Request, q: str = Form(""), last: str = Form(""), plan: str = Form(""), chat_id: str = Form("")):
     from vs import chat
     p = _portfolio()
     ids = [int(x) for x in last.split(",") if x.strip().isdigit()]
@@ -176,20 +198,198 @@ def chat_ask(request: Request, q: str = Form(""), last: str = Form(""), plan: st
         except ValueError:
             given = None
     with db.session() as conn:
-        a, plan_json = chat.answer(conn, q, p if not isinstance(p, Exception) else None, ids, plan=given)
-    shown = [r["id"] for r in a.rows] if a.kind == "opportunities" else ids
-    return templates.TemplateResponse(request, "_chat_answer.html", ctx(
-        request, q=q or "", a=a, plan_json=plan_json, shown=",".join(str(i) for i in shown), new_since=""))
+        c = chatlog.get(conn, int(chat_id)) if chat_id.isdigit() else None
+        history = [t["q"] for t in (c["turns"] if c else [])]
+        a, plan_json = chat.answer(conn, q, p if not isinstance(p, Exception) else None, ids, plan=given, history=history)
+        cid = c["id"] if c else chatlog.create(conn, q or a.title)
+        turn = len(history)
+    # numbers ("the first one") keep pointing at the last results until new ones are shown
+    shown = ",".join(str(i) for i in ([r["id"] for r in a.rows] if a.kind == "opportunities" and a.rows else ids))
+    # The results come at once; the model's few sentences above them follow (/chat/{cid}/reply/{turn}).
+    page = ctx(request, q=q or "", a=a, plan_json=plan_json, new_since="", chat_id=cid, turn=turn,
+               reply_url=f"/chat/{cid}/reply/{turn}" if q.strip() else "")
+    html = templates.get_template("_chat_answer.html").render(page)
+    with db.session() as conn:
+        chatlog.add_turn(conn, cid, q or a.title, html, shown, facts=chat.facts(a) if q.strip() else "")
+        page.update(chats=chatlog.recent(conn), chats_total=chatlog.count(conn))
+    # The answer, plus (out of band) the ids it shows, the chat it belongs to and the side bar's chat list.
+    oob = (f'<input type="hidden" name="last" id="chat-last" value="{shown}" hx-swap-oob="true">'
+           f'<input type="hidden" name="chat_id" id="chat-id" value="{cid}" hx-swap-oob="true">'
+           + templates.get_template("_sb_chats.html").render({**page, "oob": True}))
+    return HTMLResponse(html + oob, headers={"HX-Push-Url": f"/chat/{cid}"})
+
+
+def _check_progress(job_id: str, job: dict, chat_id: int, turn: int) -> str:
+    names = html_escape(", ".join(x["name"] for x in job["sites"]))
+    doing = (f"Waiting for the refresh to finish, then checking {names}…" if job["state"] == "waiting"
+             else f"Reading {names} now… this takes a minute or two per site.")
+    return (f'<div class="chat-check" hx-get="/chat/check/{job_id}?chat_id={chat_id}&amp;turn={turn}" hx-trigger="every 3s" '
+            f'hx-swap="outerHTML" role="status"><span class="dots"><i></i><i></i><i></i></span> {doing}</div>')
+
+
+@app.post("/chat/check", response_class=HTMLResponse)
+def chat_check(ids: str = Form(""), chat_id: int = Form(0), turn: int = Form(-1)):
+    """Read the sites a question named, now (you clicked "Check now")."""
+    from vs import chat
+    wanted = set(ids.split("|"))
+    sites = [s for s in chat.all_sites() if s["id"] in wanted]  # only sites the app knows
+    for s in sites:
+        s.pop("keys", None)
+    if not sites:
+        return HTMLResponse('<p class="small muted">That site is no longer in your sources.</p>')
+    job_id = pipeline.check_sites(sites)
+    html = _check_progress(job_id, pipeline.check_state(job_id), chat_id, turn)
+    if chat_id:
+        with db.session() as conn:
+            chatlog.settle_check(conn, chat_id, turn, html)
+    return HTMLResponse(html)
+
+
+@app.get("/chat/check/{job_id}", response_class=HTMLResponse)
+def chat_check_state(request: Request, job_id: str, chat_id: int = 0, turn: int = -1):
+    job = pipeline.check_state(job_id)
+    if not job:  # the app restarted meanwhile
+        html = '<p class="small muted">The check was interrupted when the app restarted. Ask again to check once more.</p>'
+    elif job["state"] in ("waiting", "running"):
+        return HTMLResponse(_check_progress(job_id, job, chat_id, turn))
+    else:
+        sids = [s["id"] for s in job["sites"]]
+        with db.session() as conn:
+            rows = feed_rows(conn, f"AND o.source_id IN ({','.join('?' * len(sids))})", tuple(sids), 10)
+            states = {r["source_id"]: r["error"] for r in conn.execute(
+                f"SELECT source_id, error FROM source_state WHERE source_id IN ({','.join('?' * len(sids))})", sids)}
+        errors = [f"{s['name']}: {states[s['id']][:120]}" for s in job["sites"] if states.get(s["id"])]
+        if job["state"] == "failed":
+            errors.append(job["error"][:200])
+        html = templates.get_template("_chat_checked.html").render(ctx(
+            request, rows=rows, names=", ".join(s["name"] for s in job["sites"]), ok=job["state"] == "done" and not errors,
+            errors=errors, links=job["sites"], new_since=""))
+    if chat_id:
+        with db.session() as conn:
+            chatlog.settle_check(conn, chat_id, turn, html)
+    return HTMLResponse(html)
+
+
+@app.get("/chat/{cid}/reply/{turn}", response_class=HTMLResponse)
+def chat_reply(cid: int, turn: int):
+    """The model's short reply to one turn, written from what the app found and
+    the chat so far, in the language of the question. Saved with the turn."""
+    from vs import chat
+    with db.session() as conn:
+        c = chatlog.get(conn, cid)
+    turns = (c or {}).get("turns") or []
+    if not 0 <= turn < len(turns):
+        return HTMLResponse("")
+    t = turns[turn]
+    if t.get("reply") is None:
+        earlier = [(x["q"], x.get("reply") or x.get("facts", "").split("\n")[0]) for x in turns[:turn]]
+        text = chat.reply(t["q"], earlier, t.get("facts") or "")
+        out = chatlog.reply_html(text)
+        with db.session() as conn:
+            chatlog.set_reply(conn, cid, turn, text, out)
+        return HTMLResponse(out)
+    return HTMLResponse(chatlog.reply_html(t["reply"]))
 
 
 @app.post("/chat/do", response_class=HTMLResponse)
-def chat_do(request: Request, payload: str = Form("{}")):
+def chat_do(request: Request, payload: str = Form("{}"), chat_id: int = Form(0), turn: int = Form(-1)):
     from vs import chat
     try:
-        done = chat.do(json.loads(payload))
-    except (ValueError, TypeError):
+        data = json.loads(payload)
+        done = "Cancelled: nothing changed." if data.get("action") == "cancel" else chat.do(data)
+    except (ValueError, TypeError, AttributeError):
         done = "That didn't work: nothing was changed."
-    return HTMLResponse(f'<p class="chat-done" role="status">{html_escape(done)}</p>')
+    out = f'<p class="chat-done" role="status">{html_escape(done)}</p>'
+    if chat_id:
+        with db.session() as conn:
+            chatlog.settle(conn, chat_id, turn, out)
+    return HTMLResponse(out)
+
+
+# ---------------------------------------------------------------- to-do
+
+def _briefing() -> set[int]:
+    return {oid for oid, j in _brief_jobs.items() if j.get("state") == "running"}
+
+
+def _todo_ctx(conn) -> dict:
+    return {"states": todo.STATES, "kinds": todo.KINDS, "outcomes": todo.OUTCOMES, "doc_labels": present.DOC_LABELS,
+            "call_options": todo.call_options(conn)}
+
+
+@app.get("/todo", response_class=HTMLResponse)
+def todo_page(request: Request, view: str = ""):
+    """The to-do board (it replaced the Applications page)."""
+    with db.session() as conn:
+        b = todo.board(conn, _briefing())
+        extra = _todo_ctx(conn)
+    return templates.TemplateResponse(request, "todo.html", ctx(
+        request, view="todo", board=b, deleted_view=view == "deleted", groups=todo.GROUPS,
+        group_counts=todo.group_counts(b), **extra))
+
+
+@app.get("/todo/card", response_class=HTMLResponse)
+def todo_card(request: Request, key: str):
+    """One card again (after a document is ticked, or while its brief is prepared)."""
+    with db.session() as conn:
+        c = todo.find(todo.board(conn, _briefing()), key)
+        extra = _todo_ctx(conn)
+    if not c:
+        return HTMLResponse("")
+    return templates.TemplateResponse(request, "_todo_card.html", ctx(request, c=c, **extra))
+
+
+@app.post("/todo/doc", response_class=HTMLResponse)
+def todo_doc(request: Request, oid: int = Form(...), doc: str = Form(...), on: int = Form(0)):
+    with db.session() as conn:
+        todo.set_doc(conn, oid, doc, bool(on))
+    return todo_card(request, f"call:{oid}")
+
+
+@app.post("/todo/doc/add")
+def todo_doc_add(oid: int = Form(...), kind: str = Form("")):
+    with db.session() as conn:
+        todo.add_doc(conn, oid, kind)
+    return RedirectResponse("/todo", 303)
+
+
+@app.post("/todo/note")
+def todo_note(key: str = Form(...), text: str = Form("")):
+    with db.session() as conn:
+        oid = todo.set_note(conn, key, text)
+    if oid:  # a call's note is the one on its page
+        log_signal("note", key=_key(oid), text=text.strip()[:1000])
+    return RedirectResponse("/todo", 303)
+
+
+@app.post("/todo/edit")
+def todo_edit(tid: int = Form(...), text: str = Form(""), kind: str = Form("portfolio"), due: str = Form(""), oid: str = Form("")):
+    with db.session() as conn:
+        todo.edit_own(conn, tid, text, kind, due, oid)
+    return RedirectResponse("/todo", 303)
+
+
+@app.post("/todo/act")
+async def todo_act(request: Request):
+    """One action on one card (its ⋯ menu) or on every selected card."""
+    form = await request.form()
+    keys, action = [str(k) for k in form.getlist("keys")], str(form.get("action", ""))
+    with db.session() as conn:
+        signals = todo.act(conn, keys, action)
+    for oid, sig in signals:
+        kind, _, value = sig.partition(":")
+        if kind == "status":
+            log_signal("status", key=_key(int(oid)), status=value if value in STATUSES else "")
+        else:
+            log_signal(kind, key=_key(int(oid)))
+    return RedirectResponse("/todo?view=deleted" if action == "restore" and form.get("from") == "deleted" else "/todo", 303)
+
+
+@app.post("/todo/add")
+def todo_add(request: Request, text: str = Form(""), kind: str = Form("portfolio"), due: str = Form(""), oid: str = Form("")):
+    with db.session() as conn:
+        todo.add_own(conn, text, kind, due, oid)
+    return RedirectResponse("/todo", 303)
 
 
 @app.get("/feed", response_class=HTMLResponse)
@@ -353,7 +553,6 @@ def detail(request: Request, oid: int):
         brief = db.kv_get(conn, f"brief:{oid}")
         o = rows[0]
         similar = _similar_titles(conn, o)
-    _remember_view(oid)
     return templates.TemplateResponse(request, "detail.html", ctx(request, o=o, similar=similar, brief=brief, view="detail",
                                                          statuses=STATUSES, reasons=DISMISS_REASONS,
                                                          brief_job=_brief_jobs.get(oid)))
@@ -440,17 +639,9 @@ def one_ics(oid: int):
                     headers={"Content-Disposition": f'attachment; filename="deadline-{oid}.ics"'})
 
 
-@app.get("/tracker", response_class=HTMLResponse)
-def tracker(request: Request):
-    with db.session() as conn:
-        rows = [db.row_dict(r) for r in conn.execute(
-            """SELECT o.*, u.app_status, u.notes, u.favourite, m.final FROM opportunity o
-               JOIN user_state u ON u.opportunity_key = o.dedup_key LEFT JOIN match m ON m.opportunity_id = o.id
-               WHERE u.app_status IS NOT NULL OR u.favourite = 1 ORDER BY o.deadline""")]
-    cols = {"favourite": [r for r in rows if not r["app_status"]]}
-    for s in STATUSES:
-        cols[s] = [r for r in rows if r["app_status"] == s]
-    return templates.TemplateResponse(request, "tracker.html", ctx(request, cols=cols, view="tracker", statuses=STATUSES))
+@app.get("/tracker")
+def tracker():
+    return RedirectResponse("/todo", 301)  # the Applications page became the to-do board
 
 
 @app.get("/taste", response_class=HTMLResponse)
@@ -563,7 +754,7 @@ def dismiss(request: Request, oid: int, reason: str = Form("other"), undo: int =
         return HTMLResponse(
             f'<article class="card gone" id="card-{oid}" aria-live="polite"><p>Dismissed: {label}. The feed learns from it.</p>'
             f'<button class="btn" hx-post="/o/{oid}/dismiss" hx-vals=\'{{"undo": 1, "reason": "{reason}"}}\' '
-            f'hx-target="#card-{oid}" hx-swap="outerHTML" hx-disabled-elt="this">Undo</button></article>')
+            f'hx-target="#card-{oid}" hx-swap="outerHTML" hx-disabled-elt="this">{icon("undo-2")} Undo</button></article>')
     return RedirectResponse(_back(request), 303)
 
 
@@ -593,7 +784,7 @@ def like(request: Request, oid: int, label: str = Form("interested"), why: str =
 
 
 @app.post("/o/{oid}/brief")
-def make_brief(request: Request, oid: int, pdf: int = Form(1)):
+def make_brief(request: Request, oid: int, pdf: int = Form(1), back: str = Form("")):
     job = _brief_jobs.get(oid)
     if not job or job.get("state") != "running":
         _brief_jobs[oid] = {"state": "running", "log": []}
@@ -606,7 +797,7 @@ def make_brief(request: Request, oid: int, pdf: int = Form(1)):
             except Exception as e:
                 _brief_jobs[oid].update(state="failed", error=str(e))
         threading.Thread(target=run, daemon=True).start()
-    return RedirectResponse(f"/o/{oid}#brief", 303)
+    return RedirectResponse("/todo" if back == "/todo" else f"/o/{oid}#brief", 303)
 
 
 @app.get("/o/{oid}/brief-status", response_class=HTMLResponse)

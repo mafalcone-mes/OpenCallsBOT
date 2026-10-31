@@ -7,7 +7,7 @@
 {% if llm_error %}<div class="notice">{{ llm_error }}</div>{% else %}<p class="small muted" style="margin-top:8px">Local models: {{ models | join(', ') or 'none pulled' }}</p>{% endif %}
 
 <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:16px">
-  <form method="post" action="/refresh"><button class="btn primary">Refresh</button></form>
+  <form method="post" action="/refresh"><button class="btn primary">{{ icon('refresh-cw') }} Refresh</button></form>
   <form method="post" action="/refresh"><input type="hidden" name="force" value="1"><button class="btn">Refresh all, ignore the 12 h wait</button></form>
   <form method="post" action="/rescore"><button class="btn">Re-score only</button></form>
   <form method="post" action="/restart" style="margin-left:auto"><button class="btn ghost" title="{{ 'Stops the refresh (what it read is kept) and ' if progress.running }}Starts the app again with the latest code and settings">Restart app</button></form>

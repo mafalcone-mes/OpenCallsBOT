@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Run {{ run.id }}{% endblock %}
 {% block main %}
-<p class="small muted"><a href="/sources">← Sources</a></p>
+<p class="small muted"><a class="with-icon" href="/sources">{{ icon('chevron-left', 14) }}Sources</a></p>
 <h1>Run #{{ run.id }}</h1>
 <p class="lede">{{ (run.started or '')[:16] | replace('T', ' ') }} · {{ run.status }}</p>
 {% if report_html %}<div class="box" style="margin-top:24px">{{ report_html | safe }}</div>{% endif %}

@@ -14,7 +14,7 @@
   {% for s in rows %}
   <article class="card">
     <div class="head"><div style="flex:1">
-      <h3><a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.name }} ↗</a></h3>
+      <h3><a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.name }} {{ icon('external-link', 14) }}</a></h3>
       <div class="org">{{ s.city }}</div>
     </div></div>
     <div class="chips">{% for k in s.types %}<span class="chip type">{{ k }}</span>{% endfor %}
@@ -22,7 +22,7 @@
     {% if s.description %}<p class="reason muted">{{ s.description }}</p>{% endif %}
     {% if s.why %}<p class="small">{{ s.why }}</p>{% endif %}
     <div class="foot">
-      {% if s.jobs_url %}<a class="btn ghost" href="{{ s.jobs_url }}" target="_blank" rel="noopener">Jobs / internships ↗</a>{% endif %}
+      {% if s.jobs_url %}<a class="btn ghost" href="{{ s.jobs_url }}" target="_blank" rel="noopener">Jobs / internships {{ icon('external-link', 14) }}</a>{% endif %}
       <form method="post" action="/studios/status" style="margin-left:auto">
         <input type="hidden" name="name" value="{{ s.name }}">
         <select name="status" onchange="this.form.submit()">{% for st in statuses %}<option value="{{ st }}" {{ 'selected' if st == s.status }}>{{ st }}</option>{% endfor %}</select>

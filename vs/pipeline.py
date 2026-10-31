@@ -11,6 +11,7 @@ import sqlite3
 import threading
 import time
 import traceback
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -447,11 +448,15 @@ def _took(since: float) -> str:
 
 # ---------------------------------------------------------------- refresh
 
-def refresh(*, force: bool = False, only: str | None = None, rerank: bool = True) -> dict:
+def refresh(*, force: bool = False, only: str | list[str] | None = None, rerank: bool = True,
+            extra_jobs: list[tuple[str, dict]] | tuple = ()) -> dict:
     """Four agents work at the same time (vs/agents.py): each opportunity is
     listed, downloaded, read and scored in turn, and shows up in the feed as
     soon as it has its score. At the end: duplicates, rules, expiry, and one
-    scoring pass over everything (discovery, explanations gone out of date)."""
+    scoring pass over everything (discovery, explanations gone out of date).
+    `only`: just these sources; `extra_jobs`: pages read once (a studio's jobs
+    page a chat question asked about). A partial run doesn't count as the
+    last refresh."""
     from vs import agents as agents_mod
 
     with _lock:
@@ -475,8 +480,9 @@ def refresh(*, force: bool = False, only: str | None = None, rerank: bool = True
 
         jobs: list[tuple[str, dict]] = [(sid, cfg) for sid, cfg in p.get("sources", {}).items() if cfg.get("enabled", True)]
         jobs += [(f"watch:{w['name']}", {"adapter": "watch", **w}) for w in p.get("watchlist", [])]
-        if only:
-            jobs = [j for j in jobs if j[0] == only]
+        if only is not None or extra_jobs:
+            wanted = {only} if isinstance(only, str) else set(only or [])
+            jobs = [j for j in jobs if j[0] in wanted] + list(extra_jobs)
         # Least recently completed first: when the page budget runs out, the
         # same sources don't wait at the back every time.
         with db.session() as conn:
@@ -531,7 +537,8 @@ def refresh(*, force: bool = False, only: str | None = None, rerank: bool = True
             conn.execute("UPDATE run SET ended=?, status=?, counts=?, log=?, report_path=? WHERE id=?",
                          (db.now(), "stopped" if stopped else "done", db.dumps({**counts, "sources": sources_report}),
                           "\n".join(_state["lines"]), str(report_path), run_id))
-            db.kv_set(conn, "last_refresh", db.now())
+            if only is None and not extra_jobs:
+                db.kv_set(conn, "last_refresh", db.now())
         _say(f"Done: {counts['new']} new, {counts['updated']} updated, {counts['expired']} expired")
         return counts
     except Exception as e:
@@ -594,6 +601,45 @@ def refresh_in_background(**kwargs) -> bool:
         return False
     threading.Thread(target=lambda: _safe(refresh, **kwargs), daemon=True).start()
     return True
+
+
+_checks: dict[str, dict] = {}
+_check_lock = threading.Lock()
+
+
+def check_sites(sites: list[dict]) -> str:
+    """Read a few named sites now, because a question in the chat asked about
+    them: sources by id, a studio's jobs page once. Waits for a refresh that
+    is already running. Returns a job id for check_state()."""
+    job_id = uuid.uuid4().hex[:12]
+    job = _checks[job_id] = {"state": "waiting" if _state["running"] else "running", "sites": sites, "error": ""}
+    only = [s["id"] for s in sites if s["kind"] == "source"]
+    extra = [(s["id"], {"adapter": "watch", "name": s["name"], "url": s["url"]}) for s in sites if s["kind"] == "studio"]
+
+    def run():
+        with _check_lock:  # one check at a time, in the order asked
+            while True:
+                while _state["running"]:
+                    job["state"] = "waiting"
+                    time.sleep(2)
+                job["state"] = "running"
+                try:
+                    refresh(force=True, only=only, extra_jobs=extra, rerank=False)
+                    job["state"] = "done"
+                    return
+                except RuntimeError as e:
+                    if "already running" not in str(e):  # someone started a refresh first: wait again
+                        job.update(state="failed", error=str(e))
+                        return
+                except Exception as e:
+                    job.update(state="failed", error=f"{type(e).__name__}: {e}")
+                    return
+    threading.Thread(target=run, daemon=True).start()
+    return job_id
+
+
+def check_state(job_id: str) -> dict | None:
+    return _checks.get(job_id)
 
 
 def _safe(fn, **kwargs):

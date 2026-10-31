@@ -84,7 +84,7 @@
       <div style="display:flex; gap:8px; align-items:baseline">
         <span class="chip {{ 'money' if ex.label == 'interested' else 'fee' }}">{{ 'Interested' if ex.label == 'interested' else 'Not for me' }}</span>
         <strong style="flex:1">{{ ex.extracted.get('title_en') or ex.url or ex.id }}</strong>
-        <form method="post" action="/examples/{{ ex.id }}/remove"><button class="btn ghost" title="Remove">✕</button></form>
+        <form method="post" action="/examples/{{ ex.id }}/remove"><button class="btn ghost" aria-label="Remove" title="Remove">{{ icon('x') }}</button></form>
       </div>
       {% if ex.why %}<p class="small" style="margin-top:4px">“{{ ex.why }}”</p>{% endif %}
       <p class="small muted">{{ ex.added[:10] }}{% if ex.extracted.get('org_name') %} · {{ ex.extracted.org_name }}{% endif %}{% if ex.url %} · <a href="{{ ex.url }}" target="_blank">link</a>{% endif %} · data/examples/{{ ex.id }}.md</p>
@@ -101,7 +101,7 @@
       {% for r in items %}
       <div style="display:flex; gap:8px; align-items:baseline; margin-top:8px">
         <a class="small" style="flex:1" href="{{ r.url }}" target="_blank" rel="noopener">{{ r.title }}</a>
-        <form method="post" action="/references/remove"><input type="hidden" name="ref_id" value="{{ r.id }}"><button class="btn ghost" title="Remove">✕</button></form>
+        <form method="post" action="/references/remove"><input type="hidden" name="ref_id" value="{{ r.id }}"><button class="btn ghost" aria-label="Remove" title="Remove">{{ icon('x') }}</button></form>
       </div>
       {% endfor %}
     </details>
@@ -110,7 +110,7 @@
     {% if sigs %}
     <h2>From your clicks</h2>
     {% for s in sigs %}{% set t = titles.get(s.ref[4:]) %}
-      <p class="small">{{ '★' if s.label == 'favourite' else '✓' if s.label == 'applied' else '✕' }}
+      <p class="small">{{ icon('star' if s.label == 'favourite' else 'check' if s.label == 'applied' else 'x', 14, 'Saved' if s.label == 'favourite' else 'Applied' if s.label == 'applied' else 'Not for me') }}
         {% if t %}<a href="/o/{{ t[0] }}">{{ t[1] }}</a>{% else %}{{ s.ref[4:] }}{% endif %}
         <span class="muted">· weight {{ '%.2f' | format(s.w) }}{{ ' · ' ~ s.why if s.why }}</span></p>
     {% endfor %}
