@@ -110,6 +110,17 @@ source_min_interval_h = 12
 detail_pages_per_source = 25   # per source, the new pages closest to your work are read first
 max_pages_per_refresh = 150    # all sources together; the rest is read at the next refresh (0 = no limit)
 parallel_downloads = 4         # sites the Downloader agent fetches at once while the Reader reads (one request at a time per site)
+paused_sources = []            # source ids not to read on your copy, whatever the shared sheet says, e.g. ["who", "fao"]
+
+[housekeeping]
+# The feed and the database stay small (vs/housekeeping.py, at the end of each
+# refresh). Calls you saved or applied to are never removed: once over they
+# are the Archive. Everything else is removed once it is over, and keeps only
+# its address and title so its page is never read again.
+low_score_days = 21    # calls under [weights].far_below are removed after this many days, unless saved
+gone_after_runs = 2    # a call without a deadline is over when two complete listings of its source no longer show it
+unseen_days = 60       # ... or when it hasn't been seen for this many days
+cache_days = 14        # saved copies of web pages are kept this long
 
 [search]
 # Job boards (Indeed via JobSpy; LinkedIn is never used). Fill in YOUR roles.

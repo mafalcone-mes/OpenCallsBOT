@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Archive{% endblock %}
+{% block main %}
+{# Your record: what you applied to and how it went, and saved calls that
+   closed. Only calls you saved or applied to are kept; the rest of what
+   closes is removed by the clean-up at each refresh. #}
+<div class="todo-head">
+  <h1>Archive</h1>
+  <a class="btn" href="/recap">{{ icon('calendar') }} Monthly recap</a>
+</div>
+<p class="lede">Your record: every application you sent and how it went, and the saved calls that closed. Calls you never saved are not kept once they close.</p>
+
+{% set total = groups.values() | map('length') | sum %}
+{% if not total %}
+<p class="muted" style="margin-top:var(--s-24)">Nothing here yet. Applications you send, and saved calls once they close, appear here.</p>
+{% endif %}
+
+{% for g, label in labels %}{% if groups[g] %}
+<section class="arch">
+  <h2>{{ label }} <span class="muted">{{ groups[g] | length }}</span></h2>
+  <ul class="arch-list">
+    {% for o in groups[g] %}
+    <li>
+      <div class="arch-what">
+        <a class="arch-title" href="/o/{{ o.id }}">{{ o.title_en or o.title_original }}</a>
+        {% set dl_main, dl_when = present.deadline_parts(o.deadline, o.deadline_kind) %}
+        <span class="small muted">{{ o.org_name or '' }}{% if dl_when %}{{ ' · ' if o.org_name }}{{ 'closed' if dl_main == 'Closed' else 'closes' }} {{ dl_when }}{% endif %}</span>
+        {% if o.notes %}<span class="small tnote">{{ icon('file-text', 14) }} {{ o.notes }}</span>{% endif %}
+      </div>
+      <div class="arch-act">
+        <form method="post" action="/archive/outcome">
+          <input type="hidden" name="oid" value="{{ o.id }}">
+          <label class="sr-only" for="out-{{ o.id }}">How it went</label>
+          <select id="out-{{ o.id }}" name="status" onchange="this.form.requestSubmit()">
+            <option value="" {{ 'selected' if g == 'not_applied' }} disabled>{{ 'Not applied' if g == 'not_applied' else 'How it went' }}</option>
+            <option value="submitted" {{ 'selected' if o.app_status == 'submitted' }}>Sent, waiting</option>
+            {% for v, l in outcomes %}<option value="{{ v }}" {{ 'selected' if o.app_status == v }}>{{ l }}</option>{% endfor %}
+          </select>
+          <noscript><button class="btn">Save</button></noscript>
+        </form>
+        {% if o.canonical_url %}<a class="btn ghost" href="{{ o.canonical_url }}" target="_blank" rel="noopener">{{ icon('external-link') }} Website</a>{% endif %}
+        <form method="post" action="/archive/forget"><input type="hidden" name="oid" value="{{ o.id }}">
+          <button class="btn ghost" aria-label="Forget “{{ o.title_en or o.title_original }}”">{{ icon('trash-2') }} Forget</button></form>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}{% endfor %}
+{% endblock %}

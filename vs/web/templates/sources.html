@@ -2,7 +2,8 @@
 {% block title %}Sources{% endblock %}
 {% block main %}
 <h1>Sources</h1>
-<p class="lede">Where the app looks. Edit the list in <code>preferences.toml</code>. A source is refetched at most every 12 hours unless you force it.</p>
+<p class="lede">Where the app looks. The list comes from the shared sheet; pause a source on your copy here. A source is refetched at most every 12 hours unless you force it.</p>
+<p class="small muted" style="margin-top:8px">Database {{ db_mb }} MB{% if cleanup %} · last clean-up {{ cleanup.at[:16] | replace('T', ' ') }}: {{ cleanup.removed }} removed, {{ (cleanup.cache_bytes / 1e6) | round | int }} MB of saved pages freed{% endif %}.</p>
 
 {% if llm_error %}<div class="notice">{{ llm_error }}</div>{% else %}<p class="small muted" style="margin-top:8px">Local models: {{ models | join(', ') or 'none pulled' }}</p>{% endif %}
 
@@ -14,14 +15,17 @@
 </div>
 
 <table class="stack">
-  <tr><th>Source</th><th>Kind</th><th>Open items</th><th>Last OK</th><th>Listed per run</th><th>Health</th><th></th></tr>
+  <tr><th>Source</th><th>Kind</th><th>Open items</th><th>Avg match</th><th>Kept</th><th>Last OK</th><th>Listed per run</th><th>Health</th><th></th></tr>
   {% for sid, cfg in configured %}{% set st = states.get(sid) %}
   {% set hist = (st.items_history if st else []) or [] %}
   {% set median = (hist | sort)[hist | length // 2] if hist else 0 %}
+  {% set stat = stats.get(sid) or {} %}
   <tr>
     <td><strong>{{ sid }}</strong><br><a class="small muted" href="{{ cfg.url }}" target="_blank">{{ (cfg.url or '')[:60] }}</a></td>
-    <td class="small" data-label="Kind">{{ cfg.adapter }}{% if cfg.get('enabled') == false %} (off){% endif %}</td>
+    <td class="small" data-label="Kind">{{ cfg.adapter }}{% if cfg.get('paused') %} (paused){% elif cfg.get('enabled') == false %} (off){% endif %}</td>
     <td data-label="Open items">{{ counts.get(sid, 0) }}</td>
+    <td class="small" data-label="Avg match" title="Over the calls found in the last 60 days">{{ stat.avg if stat.avg is not none else '—' }}</td>
+    <td class="small" data-label="Kept" title="Saved or applied to, last 60 days">{{ stat.kept if stat else '—' }}</td>
     <td class="small" data-label="Last OK">{{ (st.last_ok or '—')[:16] | replace('T', ' ') if st else '—' }}</td>
     <td class="small" data-label="Listed per run">{{ hist[-5:] | join(' · ') }}</td>
     <td class="small" data-label="Health">
@@ -29,8 +33,15 @@
       {% elif st.error %}<span class="err" title="{{ st.error }}">error: {{ st.error[:80] }}</span>
       {% elif cfg.adapter != 'watch' and st.items_last == 0 and median > 0 %}<span class="warn">0 items (usually {{ median }}): layout may have changed</span>
       {% else %}<span class="ok">ok</span>{% endif %}
+      {% if sid in suggest %}<br><span class="warn">Mostly far from your work: pause it?</span>{% endif %}
     </td>
-    <td><form method="post" action="/refresh"><input type="hidden" name="source" value="{{ sid }}"><input type="hidden" name="force" value="1"><button class="btn ghost">Run</button></form></td>
+    <td class="src-act">
+      {% if not sid.startswith('watch:') %}
+      <form method="post" action="/sources/pause"><input type="hidden" name="sid" value="{{ sid }}"><input type="hidden" name="on" value="{{ 0 if cfg.get('paused') else 1 }}">
+        <button class="btn {{ '' if sid in suggest else 'ghost' }}">{{ icon('play' if cfg.get('paused') else 'pause') }} {{ 'Resume' if cfg.get('paused') else 'Pause' }}</button></form>
+      {% endif %}
+      {% if cfg.get('enabled', true) != false %}<form method="post" action="/refresh"><input type="hidden" name="source" value="{{ sid }}"><input type="hidden" name="force" value="1"><button class="btn ghost">Run</button></form>{% endif %}
+    </td>
   </tr>
   {% endfor %}
 </table>

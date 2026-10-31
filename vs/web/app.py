@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from vs import chatlog, db, expiry, llm, pipeline, present, references, todo
+from vs import chatlog, db, expiry, housekeeping, llm, pipeline, present, references, todo
 from vs import portfolio as portfolio_mod
 from vs import config
 from vs.config import prefs, update_prefs
@@ -70,6 +70,7 @@ def ctx(request: Request, **kw) -> dict:
         chats_total = chatlog.count(conn)
         todo_open = todo.open_count(conn)
         alert = _deadline_alert(conn, request)
+        recap_offer = not alert and _recap_offer(conn, request)
     days = None
     if last:
         days = (date.today() - date.fromisoformat(last[:10])).days
@@ -78,7 +79,7 @@ def ctx(request: Request, **kw) -> dict:
     tokens = p.css_tokens if not isinstance(p, Exception) else {}
     return {"request": request, "portfolio": p, "last_refresh_days": days, "deadlines_week": soon,
             "last_visit": last_visit, "chats": chats, "chats_total": chats_total, "todo_open": todo_open,
-            "deadline_alert": alert, "cat_colors": colors, "cat_labels": labels, "tokens": tokens,
+            "deadline_alert": alert, "recap_offer": recap_offer, "cat_colors": colors, "cat_labels": labels, "tokens": tokens,
             "progress": pipeline.progress_state(), "prefs_error": config.prefs_error, "sheet_error": prefs().get("_sheet_error"), **kw}
 
 
@@ -96,6 +97,18 @@ def _deadline_alert(conn, request: Request) -> list[dict]:
     return rows
 
 
+def _recap_offer(conn, request: Request) -> bool:
+    """The monthly recap is offered once a day until it is done for the month
+    (not on the day the deadline pop-up shows, nor on the recap itself)."""
+    if request.headers.get("hx-request") or request.url.path == "/recap" or not housekeeping.recap_due(conn):
+        return False
+    today = date.today().isoformat()
+    if db.kv_get(conn, "recap_offer_day") == today:
+        return False
+    db.kv_set(conn, "recap_offer_day", today)
+    return True
+
+
 def _mark_visit() -> None:
     """Bookkeeping for the 'new since last visit' dots: never fail a page for it."""
     try:
@@ -109,7 +122,15 @@ def _mark_visit() -> None:
 # ---------------------------------------------------------------- filters
 
 FILTERS = report.FILTERS
-_where = report.filter_sql
+STILL_OPEN = " AND o.status = 'open' AND (COALESCE(o.deadline, '') = '' OR o.deadline >= date('now'))"
+
+
+def _where(f: dict) -> tuple[str, list]:
+    """Feed and Discovery filters. Only calls still open: closed saved calls
+    and applications are in the Archive (calendar, chat and the call's page
+    still show them)."""
+    where, params = report.filter_sql(f)
+    return where + STILL_OPEN, params
 
 
 def _filters(request: Request) -> dict:
@@ -678,6 +699,9 @@ def sources(request: Request):
         runs = [db.row_dict(r) for r in conn.execute("SELECT * FROM run ORDER BY id DESC LIMIT 15")]
         counts = {r["source_id"]: r["c"] for r in conn.execute(
             "SELECT source_id, COUNT(*) c FROM opportunity WHERE status='open' GROUP BY source_id")}
+        stats = housekeeping.source_stats(conn)
+        suggest = set(housekeeping.pause_suggestions(conn, p, stats))
+        cleanup = (db.kv_get(conn, "cleanup_log") or [None])[-1]
     configured = [(sid, cfg) for sid, cfg in p.get("sources", {}).items()]
     configured += [(f"watch:{w['name']}", {"adapter": "watch", **w}) for w in p.get("watchlist", [])]
     try:
@@ -685,8 +709,70 @@ def sources(request: Request):
         llm_error = None
     except llm.LLMError as e:
         models, llm_error = [], str(e)
+    size = db.DB_PATH.stat().st_size if db.DB_PATH.exists() else 0
     return templates.TemplateResponse(request, "sources.html", ctx(request, configured=configured, states=states, runs=runs,
-                                                          counts=counts, view="sources", models=models, llm_error=llm_error))
+                                                          counts=counts, view="sources", models=models, llm_error=llm_error,
+                                                          stats=stats, suggest=suggest, cleanup=cleanup, db_mb=round(size / 1e6)))
+
+
+@app.post("/sources/pause")
+def sources_pause(request: Request, sid: str = Form(...), on: int = Form(1)):
+    """Pause or resume a source on your copy ([fetch].paused_sources)."""
+    def mutate(doc):
+        fetch = doc.setdefault("fetch", {})
+        paused = [x for x in fetch.get("paused_sources", []) if x != sid]
+        fetch["paused_sources"] = paused + [sid] if on else paused
+    if sid in prefs().get("sources", {}):
+        update_prefs(mutate)
+    return RedirectResponse(_back(request, "/sources"), 303)
+
+
+# ---------------------------------------------------------------- archive and recap
+
+@app.get("/archive", response_class=HTMLResponse)
+def archive_page(request: Request):
+    with db.session() as conn:
+        groups = housekeeping.archive(conn)
+    return templates.TemplateResponse(request, "archive.html", ctx(
+        request, view="archive", groups=groups, labels=housekeeping.OUTCOME_GROUPS, outcomes=todo.OUTCOMES))
+
+
+@app.post("/archive/outcome")
+def archive_outcome(request: Request, oid: int = Form(...), status: str = Form("")):
+    if status in STATUSES:
+        log_signal("status", key=_key(oid), status=status)
+    return RedirectResponse(_back(request, "/archive"), 303)
+
+
+@app.post("/archive/forget")
+def archive_forget(request: Request, oid: int = Form(...)):
+    """Out of your record: no longer saved, removed at the next clean."""
+    key = _key(oid)
+    log_signal("status", key=key, status="")
+    log_signal("unfavourite", key=key)
+    return RedirectResponse(_back(request, "/archive"), 303)
+
+
+@app.get("/recap", response_class=HTMLResponse)
+def recap_page(request: Request):
+    with db.session() as conn:
+        r = housekeeping.recap(conn, prefs())
+    return templates.TemplateResponse(request, "recap.html", ctx(
+        request, view="archive", r=r, outcomes=todo.OUTCOMES, month=date.today().strftime("%B %Y")))
+
+
+@app.post("/recap/done")
+async def recap_done(request: Request):
+    form = await request.form()
+    kept = [int(x) for x in form.getlist("kept") if str(x).isdigit()]
+    seen = [int(x) for x in form.getlist("seen") if str(x).isdigit()]
+    for oid in set(seen) - set(kept):  # unticked: forgotten, removed at the next clean
+        key = _key(oid)
+        log_signal("status", key=key, status="")
+        log_signal("unfavourite", key=key)
+    with db.session() as conn:
+        housekeeping.recap_done(conn, kept)
+    return RedirectResponse("/archive", 303)
 
 
 @app.get("/runs/{rid}", response_class=HTMLResponse)

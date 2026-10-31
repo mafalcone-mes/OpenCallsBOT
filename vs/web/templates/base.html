@@ -26,7 +26,7 @@
   <a class="btn sb-new" href="/">{{ icon('plus') }} New question</a>
   <a class="sb-todo {{ 'on' if view == 'todo' }}" href="/todo" {{ 'aria-current=page' if view == 'todo' }}><span class="sb-label">{{ icon('list-todo', 18) }} To-do</span>{% if todo_open %} <span class="count" aria-label="{{ todo_open }} open">{{ todo_open }}</span>{% endif %}</a>
   <nav class="sb-nav" aria-label="Main">
-    {% for v, href, label, ic in [('chat', '/', 'Ask', 'message-circle'), ('feed', '/feed', 'Feed', 'newspaper'), ('discovery', '/discovery', 'Discovery', 'compass'), ('calendar', '/calendar', 'Calendar', 'calendar'), ('studios', '/studios', 'Studios', 'building-2'), ('taste', '/taste', 'Taste', 'sparkles'), ('sources', '/sources', 'Sources', 'globe')] %}
+    {% for v, href, label, ic in [('chat', '/', 'Ask', 'message-circle'), ('feed', '/feed', 'Feed', 'newspaper'), ('discovery', '/discovery', 'Discovery', 'compass'), ('calendar', '/calendar', 'Calendar', 'calendar'), ('archive', '/archive', 'Archive', 'archive'), ('studios', '/studios', 'Studios', 'building-2'), ('taste', '/taste', 'Taste', 'sparkles'), ('sources', '/sources', 'Sources', 'globe')] %}
     <a href="{{ href }}" class="{{ 'on' if view == v }}" {{ 'aria-current=page' if view == v }}>{{ icon(ic, 18) }} {{ label }}</a>
     {% endfor %}
   </nav>
@@ -87,6 +87,18 @@
   </form>
 </dialog>
 <script>document.getElementById("deadline-alert").showModal();</script>
+{% endif %}
+{% if recap_offer %}
+{# Once a month: go through the record and the clean-up together. #}
+<dialog class="alert" id="recap-offer" aria-labelledby="recap-title">
+  <h2 id="recap-title">Time for the monthly recap</h2>
+  <p class="small muted">Set how your applications went, decide about saved calls that closed, and see what the app cleaned this month. It takes a couple of minutes.</p>
+  <form method="dialog" class="alert-actions">
+    <a class="btn primary" href="/recap">Open the recap</a>
+    <button class="btn" autofocus>Later</button>
+  </form>
+</dialog>
+<script>document.getElementById("recap-offer").showModal();</script>
 {% endif %}
 <script>
   // A click that fails (app restarting, database busy) says so instead of doing nothing.

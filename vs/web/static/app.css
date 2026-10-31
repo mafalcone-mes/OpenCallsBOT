@@ -482,3 +482,18 @@ details.menu summary::-webkit-details-marker { display: none; }
 .chat-list { list-style: none; margin-top: var(--s-24); }
 .chat-list li { display: flex; align-items: center; gap: var(--s-8); border-bottom: 1px solid var(--line); }
 .chat-list li > a { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: var(--s-12) 0; }
+
+/* archive and monthly recap: one row per call, actions on the right */
+.arch { margin-top: var(--s-8); }
+.arch-list { list-style: none; display: flex; flex-direction: column; }
+.arch-list > li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s-8) var(--s-16);
+  padding: var(--s-12) 0; border-bottom: 1px solid var(--line); }
+.arch-what { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 320px; }
+.arch-title { font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
+.arch-act, .arch-choice { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-8); }
+.arch-act select { max-width: 100%; }
+.arch-keep { display: flex; align-items: flex-start; gap: var(--s-12); margin: 0; flex: 1 1 320px; min-width: 0; cursor: pointer; color: var(--ink); font-size: var(--t-body); }
+.arch-keep input { width: 20px; height: 20px; margin-top: 2px; flex: none; accent-color: var(--accent); }
+.recap-stats { list-style: none; display: flex; flex-direction: column; gap: var(--s-4); }
+.recap-done { margin-top: var(--s-48); }
+.src-act { display: flex; flex-wrap: wrap; gap: var(--s-4); }

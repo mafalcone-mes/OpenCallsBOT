@@ -46,7 +46,12 @@ def prefs() -> dict:
         return _last_good
     _last_good, prefs_error = data, None
     from vs.sheet import apply_to_prefs  # the Google Sheet is the master list of sources
-    return apply_to_prefs(data)
+    data = apply_to_prefs(data)
+    # Sources you paused on your own copy ([fetch].paused_sources), whatever the shared sheet says.
+    for sid in data.get("fetch", {}).get("paused_sources", []):
+        if sid in data.get("sources", {}):
+            data["sources"][sid] = {**data["sources"][sid], "enabled": False, "paused": True}
+    return data
 
 
 def update_prefs(mutate) -> None:

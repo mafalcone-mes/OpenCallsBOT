@@ -28,7 +28,7 @@ from urllib.parse import urlparse
 from vs import db, llm
 from vs.fetch import RawItem
 from vs.fetch.adapters import ADAPTERS
-from vs.fetch.polite import Blocked, PoliteClient
+from vs.fetch.polite import Blocked, PoliteClient, canonical_url
 from vs.fetch.watch import check as watch_check
 
 END = object()
@@ -203,6 +203,7 @@ class Explorer(Agent):
                 else:
                     items = list(ADAPTERS[cfg["adapter"]](run.client, sid, cfg))
                 listed = len(items)
+                self._seen_on_source(sid, cfg, st, items)
                 kept = [it for it in items if not rules_mod.reason(it.title, "", sid, active)]
                 if len(kept) < len(items):
                     run.say(f"{sid}: {len(items) - len(kept)} skipped by your rules (title not in your fields / never-show)")
@@ -240,6 +241,27 @@ class Explorer(Agent):
                 conn.commit()
             self.done += 1
         self.current = ""
+
+
+    def _seen_on_source(self, sid: str, cfg: dict, st, items: list) -> None:
+        """Calls the source still lists are seen now; open calls a complete
+        listing no longer shows get one more missed run (housekeeping ends
+        those without a deadline after two). Not for searches, whose results
+        change every time, nor watched pages, which only report new links."""
+        conn, now = self.conn, db.now()
+        keys = {canonical_url(it.url) for it in items}
+        conn.executemany("UPDATE opportunity SET last_seen = ?, missed_runs = 0 WHERE dedup_key = ? AND status = 'open'",
+                         [(now, k) for k in keys])
+        if cfg.get("adapter") in ("jobspy", "watch") or cfg.get("queries"):
+            return
+        history = (db.row_dict(st)["items_history"] or []) if st else []
+        usual = sorted(history)[len(history) // 2] if history else 0
+        if not keys or len(keys) < usual / 2:  # a page that suddenly lists little has likely changed layout
+            return
+        missing = [r[0] for r in conn.execute("SELECT dedup_key FROM opportunity WHERE source_id = ? AND status = 'open'", (sid,))
+                   if r[0] not in keys]
+        conn.executemany("UPDATE opportunity SET missed_runs = COALESCE(missed_runs, 0) + 1 WHERE dedup_key = ?",
+                         [(k,) for k in missing])
 
 
 class Downloader(Agent):

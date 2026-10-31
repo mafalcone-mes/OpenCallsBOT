@@ -521,6 +521,11 @@ def refresh(*, force: bool = False, only: str | list[str] | None = None, rerank:
             conn.commit()
             counts["expired"] = expiry.expire(conn)
             conn.commit()
+            from vs import housekeeping
+            cleaned = housekeeping.clean(conn, p)
+            counts["removed"] = cleaned["removed"]
+            conn.commit()
+            _say(housekeeping.describe(cleaned))
             _say("Scoring everything again (discovery, explanations gone out of date)")
             stale = p.get("weights", {}).get("rerank_stale_per_run", 10)
             score_counts = score_mod().score_all(conn, portfolio, rerank=rerank, progress=_say,
@@ -540,6 +545,8 @@ def refresh(*, force: bool = False, only: str | list[str] | None = None, rerank:
             if only is None and not extra_jobs:
                 db.kv_set(conn, "last_refresh", db.now())
         _say(f"Done: {counts['new']} new, {counts['updated']} updated, {counts['expired']} expired")
+        if housekeeping.compact(db.DB_PATH, cleaned["cache_bytes"]):
+            _say("Database compacted")
         return counts
     except Exception as e:
         _say(f"Refresh failed: {e}")

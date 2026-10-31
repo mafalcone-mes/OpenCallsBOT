@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Monthly recap{% endblock %}
+{% block main %}
+{# Once a month, together: settle the record, then see what was cleaned. #}
+<h1>Recap · {{ month }}</h1>
+<p class="lede">Settle how your applications went, decide about saved calls that closed, and see what the app cleaned{{ ' since the last recap' if r.since else '' }}.</p>
+
+<h2>1 · Applications waiting for an answer <span class="muted">{{ r.waiting | length }}</span></h2>
+{% if r.waiting %}
+<ul class="arch-list">
+  {% for o in r.waiting %}
+  <li>
+    <div class="arch-what"><a class="arch-title" href="/o/{{ o.id }}">{{ o.title_en or o.title_original }}</a>
+      <span class="small muted">{{ o.org_name or '' }} · sent {{ (o.updated or '')[:10] }}</span></div>
+    <div class="arch-act">
+      <form method="post" action="/archive/outcome" class="arch-choice">
+        <input type="hidden" name="oid" value="{{ o.id }}">
+        {% for v, l in outcomes %}<button class="btn" name="status" value="{{ v }}">{{ icon({'selected': 'trophy', 'rejected': 'x', 'no_answer': 'clock'}[v]) }} {{ l }}</button>{% endfor %}
+      </form>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}<p class="muted">Nothing waiting.</p>{% endif %}
+
+<form method="post" action="/recap/done" id="recap-form"></form>
+<h2>2 · Saved calls that closed without an application <span class="muted">{{ r.closed_unsent | length }}</span></h2>
+{% if r.closed_unsent %}
+<p class="small muted">Ticked ones stay in the archive; untick the ones not worth remembering and they are forgotten when you finish.</p>
+<ul class="arch-list">
+  {% for o in r.closed_unsent %}
+  <li>
+    <label class="arch-keep"><input type="checkbox" name="kept" value="{{ o.id }}" form="recap-form" checked>
+      <span class="arch-what"><span class="arch-title">{{ o.title_en or o.title_original }}</span>
+        <span class="small muted">{{ o.org_name or '' }}{% if o.deadline %} · closed {{ o.deadline[:10] }}{% endif %}</span></span></label>
+    <a class="btn ghost" href="/o/{{ o.id }}">{{ icon('arrow-right') }} Open</a>
+  </li>
+  {% endfor %}
+</ul>
+{% for o in r.closed_unsent %}<input type="hidden" name="seen" value="{{ o.id }}" form="recap-form">{% endfor %}
+{% else %}<p class="muted">None this month.</p>{% endif %}
+
+<h2>3 · What the app cleaned</h2>
+{% set c = r.cleaned %}
+{% if c.removed or c.cache_bytes %}
+<ul class="recap-stats">
+  <li><strong>{{ c.closed }}</strong> calls that closed (you hadn't saved them)</li>
+  <li><strong>{{ c.far }}</strong> far from your work for three weeks</li>
+  <li><strong>{{ c.noise }}</strong> pages that weren't calls, or duplicates</li>
+  <li><strong>{{ c.gone }}</strong> taken down by their source</li>
+  <li><strong>{{ (c.cache_bytes / 1e6) | round | int }} MB</strong> of saved web pages freed</li>
+</ul>
+<p class="small muted">Removed calls keep only their address and title, so the app never reads them again.</p>
+{% else %}<p class="muted">Nothing cleaned yet: it happens at the end of each refresh.</p>{% endif %}
+
+<h2>4 · Sources that bring mostly noise <span class="muted">{{ r.pause | length }}</span></h2>
+{% if r.pause %}
+<p class="small muted">Three refreshes or more, an average match under 35 and nothing saved.</p>
+<ul class="arch-list">
+  {% for sid in r.pause %}
+  <li><div class="arch-what"><span class="arch-title">{{ sid }}</span></div>
+    <form method="post" action="/sources/pause"><input type="hidden" name="sid" value="{{ sid }}"><input type="hidden" name="on" value="1">
+      <button class="btn">{{ icon('pause') }} Pause it</button></form></li>
+  {% endfor %}
+</ul>
+{% else %}<p class="muted">None: every source brings something close to your work.</p>{% endif %}
+
+<p class="recap-done"><button class="btn primary" form="recap-form">{{ icon('check') }} Done for this month</button></p>
+{% endblock %}

@@ -147,6 +147,8 @@ def _migrate(conn) -> None:
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(opportunity)")}
     if "extract_version" not in cols:
         conn.execute("ALTER TABLE opportunity ADD COLUMN extract_version TEXT")
+    if "missed_runs" not in cols:  # complete listings of its source that no longer showed it
+        conn.execute("ALTER TABLE opportunity ADD COLUMN missed_runs INTEGER DEFAULT 0")
     if "hidden_reason" not in cols:
         conn.execute("ALTER TABLE opportunity ADD COLUMN hidden_reason TEXT")
     todo_cols = {r["name"] for r in conn.execute("PRAGMA table_info(todo)")}

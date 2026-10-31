@@ -114,9 +114,15 @@ def board(conn, briefing: set[int] | frozenset = frozenset()) -> dict:
                 "docs": [], "group": None, "score": None, "changed": "", "own": None, "briefing": False, "has_brief": False}
         return {**base, **kw}
 
+    today, month_ago = date.today().isoformat(), (date.today() - timedelta(days=30)).isoformat()
     for o in calls:
         oid, name = o["id"], names[o["id"]]
         col = _COLUMN.get(o["app_status"], "todo")
+        # The board is what's still to do: a call that closed before you sent it,
+        # and outcomes older than a month, are in the Archive.
+        closed = o["status"] != "open" or bool(o["deadline"] and o["deadline"][:10] < today)
+        if (col != "done" and closed) or (col == "done" and (o["updated"] or "")[:10] < month_ago):
+            continue
         brief = db.kv_get(conn, f"brief:{oid}")
         docs, group = [], None
         if col == "done":
