@@ -2,7 +2,7 @@
 # and publishes the two zips as a release of the public repo oppo-beta,
 # which holds no source code.
 #
-# Needs the secret BETA_RELEASE_TOKEN: a fine-grained GitHub token with
+# Needs the secret TOKEN: a fine-grained GitHub token with
 # "Contents: read and write" on mafalcone-mes/oppo-beta only.
 # It runs by itself at every push to the beta-build branch. Every build is
 # locked (5 days from the first opening, vs/beta.py): scripts/build_beta.py
@@ -50,7 +50,7 @@ jobs:
           merge-multiple: true
       - name: Publish on oppo-beta
         env:
-          GH_TOKEN: ${{ secrets.BETA_RELEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.TOKEN }}
         run: |
           gh release create "$VERSION" zips/*.zip --repo mafalcone-mes/oppo-beta \
             --title "Oppo $VERSION" \
