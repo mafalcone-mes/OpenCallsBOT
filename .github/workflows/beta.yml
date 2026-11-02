@@ -1,0 +1,57 @@
+# Builds the beta for testers (scripts/build_beta.py) on Windows and macOS
+# and publishes the two zips as a release of the public repo oppo-beta,
+# which holds no source code.
+#
+# Needs the secret BETA_RELEASE_TOKEN: a fine-grained GitHub token with
+# "Contents: read and write" on mafalcone-mes/oppo-beta only.
+# It runs by itself at every push to the beta-build branch. Every build is
+# locked (5 days from the first opening, vs/beta.py): scripts/build_beta.py
+# always switches the lock on and has no option to leave it off.
+#
+# To bring your latest work into the beta:
+#   git checkout beta-build && git merge add-european-sources && git push && git checkout add-european-sources
+
+name: Beta build
+
+on:
+  push:
+    branches: [beta-build]
+  workflow_dispatch:
+
+env:
+  VERSION: beta-${{ github.run_number }}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync
+      - run: uv run pytest -q
+      - run: uv run --with nuitka python scripts/build_beta.py --version "${{ env.VERSION }}"
+        shell: bash
+      - uses: actions/upload-artifact@v4
+        with:
+          name: oppo-${{ matrix.os }}
+          path: dist/Oppo-*.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: zips
+          merge-multiple: true
+      - name: Publish on oppo-beta
+        env:
+          GH_TOKEN: ${{ secrets.BETA_RELEASE_TOKEN }}
+        run: |
+          gh release create "$VERSION" zips/*.zip --repo mafalcone-mes/oppo-beta \
+            --title "Oppo $VERSION" \
+            --notes "Download the zip for your computer, unzip it and follow the README. This test copy works for 5 days from the first time you open it."

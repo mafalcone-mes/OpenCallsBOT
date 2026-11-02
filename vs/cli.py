@@ -12,7 +12,11 @@ RESTART_CODE = 3  # the dashboard exits with this to be started again (Restart b
 
 
 def main(argv: list[str] | None = None) -> None:
-    sys.stdout.reconfigure(encoding="utf-8")
+    if sys.stdout:  # a windowed program may have no console
+        sys.stdout.reconfigure(encoding="utf-8")
+    argv = sys.argv[1:] if argv is None else argv
+    if not argv:  # double-clicked: open the dashboard
+        argv = ["serve"]
     ap = argparse.ArgumentParser(prog="vs", description="Find opportunities that fit your portfolio.")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
@@ -39,12 +43,22 @@ def main(argv: list[str] | None = None) -> None:
     e.add_argument("--url", default="")
     e.add_argument("--text-file", help="File with the call's text")
     e.add_argument("--why", default="")
+    sub.add_parser("selfcheck", help=argparse.SUPPRESS)  # scripts/build_beta.py: does the compiled program work?
 
     args = ap.parse_args(argv)
 
+    if args.cmd == "selfcheck":
+        from vs.selfcheck import run
+        sys.exit(run())
+    from vs import beta
+    if args.cmd != "serve" and (why := beta.locked()):
+        sys.exit(why)  # the beta is over: the dashboard says so, the commands stop
+
     if args.cmd == "serve" and args.child:
         import uvicorn
-        uvicorn.run("vs.web.app:app", host="127.0.0.1", port=args.port, log_level="warning")
+
+        from vs.web.app import app  # imported here, not by name, so a compiled build finds it
+        uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")
     elif args.cmd == "serve":
         serve(args.port, browser=not args.no_browser)
     elif args.cmd == "refresh":
@@ -83,7 +97,14 @@ def main(argv: list[str] | None = None) -> None:
 def serve(port: int, *, browser: bool) -> None:
     """Run the dashboard in a child process and start it again whenever it
     exits with RESTART_CODE, so a restart loads the current code and settings."""
-    cmd = [sys.executable, "-m", "vs.cli", "serve", "--child", "--port", str(port)]
+    from vs.config import COMPILED
+    if COMPILED:  # start.bat / start.sh do this when running from the code
+        from vs.onboarding import start_ollama
+        start_ollama()
+    # compiled, the program itself is the command; from the code, Python runs this module
+    cmd = [sys.executable] + ([] if COMPILED else ["-m", "vs.cli"]) + ["serve", "--child", "--port", str(port)]
+    if COMPILED:
+        print(f"Oppo is running at http://127.0.0.1:{port}/ . Close this window to quit.", flush=True)
     if browser:
         webbrowser.open(f"http://127.0.0.1:{port}/")
     while True:

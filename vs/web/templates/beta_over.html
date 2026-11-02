@@ -1,0 +1,10 @@
+{% extends "_bare.html" %}
+{% block title %}The beta has ended{% endblock %}
+{% block main %}
+<div class="beta-over">
+  {{ oppo('sleep', 96) }}
+  <h1>The beta has ended</h1>
+  <p class="lede">Thank you for trying Oppo! This test copy doesn't open anymore. Nothing was deleted: your files are still on this computer.</p>
+  {% if feedback_url %}<p class="actions"><a class="btn primary" href="{{ feedback_url }}" target="_blank" rel="noopener">Tell us how it went</a></p>{% endif %}
+</div>
+{% endblock %}

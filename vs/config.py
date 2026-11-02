@@ -1,12 +1,38 @@
 """App paths and preferences.toml access."""
 
 import os
+import sys
 import tomllib
 from pathlib import Path
 
 import tomlkit
 
-APP_DIR = Path(__file__).resolve().parent.parent
+# Compiled into a program (the beta for testers, scripts/build_beta.py) or run from the code.
+COMPILED = "__compiled__" in globals()
+# Files that come with the app (templates, static files, sources-snapshot.csv,
+# preferences.example.toml): the repository, or the compiled program's folder.
+RESOURCE_DIR = Path(__file__).resolve().parent.parent
+
+
+def _user_dir() -> Path:
+    """Where the person's own files live (preferences.toml, data/, output/).
+    From the code: the repository, as always. Compiled: the system's place
+    for app data, since the program's folder may be read-only or replaced.
+    VS_HOME overrides both (tests)."""
+    if os.environ.get("VS_HOME"):
+        return Path(os.environ["VS_HOME"]).resolve()
+    if not COMPILED:
+        return RESOURCE_DIR
+    if sys.platform == "win32":
+        return Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / "Oppo"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "Oppo"
+    return Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "oppo"
+
+
+APP_DIR = _user_dir()
+APP_DIR.mkdir(parents=True, exist_ok=True)
+EXAMPLE_PREFS = RESOURCE_DIR / "preferences.example.toml"
 # VS_DATA_DIR: a second, separate board (its own database, examples, stars),
 # e.g. to try another list of sources without touching the usual one.
 DATA_DIR = Path(os.environ.get("VS_DATA_DIR") or "data")

@@ -24,3 +24,6 @@ PLAN_PROMPT.md
 docs/*.json
 docs/*.txt
 docs/*.err
+
+# ---- Beta builds (scripts/build_beta.py) -----------------------------------
+dist/

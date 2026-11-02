@@ -1,0 +1,7 @@
+{% extends "_bare.html" %}
+{% block title %}Downloading the models{% endblock %}
+{% block main %}
+<h1>Almost there</h1>
+<p class="lede">Oppo is downloading its AI models through Ollama. It happens once, takes a while (several GB) and you can leave this page open.</p>
+<div hx-get="/setup/models/state" hx-trigger="every 2s" hx-swap="innerHTML">{% include "_setup_pulls.html" %}</div>
+{% endblock %}

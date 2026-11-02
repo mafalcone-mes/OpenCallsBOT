@@ -68,3 +68,22 @@ or `studios.toml`. `preferences.example.toml` is the template.
 - Windows: `start.bat`; macOS/Linux: `./start.sh`; or `uv run vs serve`.
 - Tests: `uv run pytest` (offline; they use `preferences.example.toml`).
 - Installation on a new machine: `INSTALL_FOR_AI.md`.
+- With no `preferences.toml` the dashboard opens the Welcome page (`/setup`,
+  `vs/onboarding.py`): portfolio PDF, a few questions, model download.
+
+## Beta for testers
+
+Testers get a **compiled program, never the source code**. The code stays in
+this private repo. `scripts/build_beta.py` (Nuitka) builds it on the current
+OS. `.github/workflows/beta.yml` builds Windows + macOS and publishes the zips
+as a release of the public repo `mafalcone-mes/oppo-beta`, which holds only
+`beta-repo/README.md` and `beta-repo/LICENSE` (proprietary).
+
+- `vs/build_info.py` is `BETA = False` in git. The build switches it on only
+  in the compiled copy, so running from the code never locks.
+- `vs/beta.py`: a beta copy stops (it never deletes anything) 5 days after
+  its first opening, 30 days after its build, or when the shared sheet has a
+  row `kind = beta`, `name = beta`, `enabled = false`.
+- Compiled, the person's files live in `%LOCALAPPDATA%\Oppo` or
+  `~/Library/Application Support/Oppo` (`config.APP_DIR`). Bundled files are
+  under `config.RESOURCE_DIR`. Never bundle anything personal.

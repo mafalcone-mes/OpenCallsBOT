@@ -64,6 +64,10 @@
   {% if progress.running %}
   <div class="page-progress" hx-get="/progress" hx-trigger="every 3s" hx-swap="innerHTML">{% include "_progress.html" %}</div>
   {% endif %}
+  {% if beta and beta.active %}
+  <p class="beta-bar small with-icon">{{ icon('clock', 14) }} Beta · {% if beta.days_left >= 1 %}{{ beta.days_left }} day{{ 's' if beta.days_left != 1 }}{% else %}{{ beta.hours_left }} hour{{ 's' if beta.hours_left != 1 }}{% endif %} left
+    {% if feedback_url %}· <a href="{{ feedback_url }}" target="_blank" rel="noopener">Send feedback</a>{% endif %}</p>
+  {% endif %}
   <main id="content" tabindex="-1">
   {% if portfolio is not none and portfolio.__class__.__name__ != 'Portfolio' %}
     <div class="notice">Could not read the portfolio website: {{ portfolio }}</div>

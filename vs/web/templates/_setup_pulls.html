@@ -1,0 +1,18 @@
+{% if not ollama %}
+<div class="notice" role="alert">Ollama isn't running. Open the Ollama app (or <a href="{{ ollama_url }}" target="_blank" rel="noopener">install it</a>): the download starts by itself.</div>
+{% else %}
+<ul class="pulls">
+  {% for p in pulls %}
+  <li>
+    <p><strong>{{ p.model }}</strong>{% if p.gb %} · {{ p.gb }} GB{% endif %}
+      <span class="small muted">· {{ 'ready' if p.done else (p.error and 'stopped') or p.status }}</span></p>
+    <progress max="100" value="{{ p.pct }}" aria-label="{{ p.model }} downloaded">{{ p.pct }}%</progress>
+    {% if p.error %}<p class="small" role="alert">{{ p.error }} · it tries again in a moment.</p>{% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% if pulls and pulls | selectattr('done') | list | length == pulls | length %}
+<p class="actions"><a class="btn primary" href="/">{{ icon('arrow-right', 18) }} Open Oppo</a></p>
+<p class="small muted">On Home, press <strong>Search my sources</strong>. The first search reads a few hundred pages: about an hour; keep the computer awake and plugged in.</p>
+{% endif %}
+{% endif %}

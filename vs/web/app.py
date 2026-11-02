@@ -13,11 +13,12 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from vs import chatlog, db, expiry, housekeeping, llm, pipeline, present, references, todo
+from vs import beta, chatlog, db, expiry, housekeeping, llm, onboarding, pipeline, present, references, todo
 from vs import portfolio as portfolio_mod
 from vs import config
 from vs.config import prefs, update_prefs
@@ -79,7 +80,8 @@ def ctx(request: Request, **kw) -> dict:
     return {"request": request, "portfolio": p, "last_refresh_days": days, "deadlines_week": soon,
             "last_visit": last_visit, "chats": chats, "chats_total": chats_total, "todo_open": todo_open,
             "cat_colors": colors, "cat_labels": labels, "tokens": tokens,
-            "progress": pipeline.progress_state(), "prefs_error": config.prefs_error, "sheet_error": prefs().get("_sheet_error"), **kw}
+            "progress": pipeline.progress_state(), "prefs_error": config.prefs_error, "sheet_error": prefs().get("_sheet_error"),
+            "beta": beta.status(), "feedback_url": beta.feedback_url(), **kw}
 
 
 def _mark_visit() -> None:
@@ -161,6 +163,102 @@ def _feed_tabs(conn, where: str, params: list, since: str = "") -> list[dict]:
 
 
 TODAY_TOP = 3  # best new cards shown on Today
+
+
+# ---------------------------------------------------------------- welcome and beta
+#
+# Two things come before every page: a beta copy that has ended shows only
+# /beta-over (vs/beta.py), and with no preferences.toml yet the Welcome page
+# (/setup, vs/onboarding.py) asks the few questions that write it.
+
+OPEN_PATHS = ("/static/", "/favicon.svg")
+
+
+@app.middleware("http")
+async def gate(request: Request, call_next):
+    path = request.url.path
+    if path.startswith(OPEN_PATHS):
+        return await call_next(request)
+    if beta.active() and path != "/beta-over" and (await run_in_threadpool(beta.status))["over"]:
+        return RedirectResponse("/beta-over", 303)
+    if not config.PREFS_PATH.exists() and not path.startswith(("/setup", "/beta-over")):
+        return RedirectResponse("/setup", 303)
+    return await call_next(request)
+
+
+@app.get("/beta-over", response_class=HTMLResponse)
+def beta_over(request: Request):
+    st = beta.status()
+    if not st["over"]:
+        return RedirectResponse("/", 303)
+    return templates.TemplateResponse(request, "beta_over.html", {"request": request, "beta": st, "feedback_url": beta.feedback_url()})
+
+
+def _setup_ctx(request: Request, **kw) -> dict:
+    return {"request": request, "ollama": onboarding.ollama_running(), "ollama_url": onboarding.ollama_download_url(),
+            "seniority": onboarding.SENIORITY, "open_to": onboarding.OPEN_TO, "beta": beta.status(),
+            "feedback_url": beta.feedback_url(), "has_prefs": config.PREFS_PATH.exists(), **kw}
+
+
+@app.get("/setup", response_class=HTMLResponse)
+def setup_page(request: Request, error: str = ""):
+    """Welcome: Ollama, the portfolio, a few facts. Once preferences.toml
+    exists, the models' download (/setup/models)."""
+    if config.PREFS_PATH.exists():
+        return RedirectResponse("/setup/models", 303)
+    onboarding.start_ollama()
+    return templates.TemplateResponse(request, "setup.html", _setup_ctx(request, error=error))
+
+
+@app.post("/setup")
+def setup_save(email: str = Form(""), roles: str = Form(""), avoid: str = Form(""), countries: str = Form(""),
+               residence: str = Form(""), citizenships: str = Form(""), languages: str = Form(""),
+               seniority: str = Form(""), open_to: list[str] = Form([]), folder: str = Form(""),
+               portfolio: UploadFile | None = File(None), cv: UploadFile | None = File(None)):
+    if config.PREFS_PATH.exists():
+        return RedirectResponse("/setup/models", 303)
+    saved = []
+    for kind, upload in (("portfolio", portfolio), ("cv", cv)):
+        data = upload.file.read(UPLOADS[kind][0] + 1) if upload and upload.filename else b""
+        if not data:
+            continue
+        if len(data) > UPLOADS[kind][0]:
+            return RedirectResponse("/setup?error=too-big", 303)
+        if _file_type(data) != "pdf":
+            return RedirectResponse("/setup?error=wrong-type", 303)
+        up = portfolio_mod.uploads_dir()
+        up.mkdir(parents=True, exist_ok=True)
+        (up / portfolio_mod.UPLOAD_FILES[kind]).write_bytes(data)
+        saved.append(kind)
+    if not saved and not folder.strip():
+        return RedirectResponse("/setup?error=no-portfolio", 303)
+    if folder.strip() and not Path(folder.strip()).expanduser().is_dir():
+        return RedirectResponse("/setup?error=no-folder", 303)
+    if not roles.strip():
+        return RedirectResponse("/setup?error=no-roles", 303)
+    onboarding.write_prefs({"email": email, "roles": roles, "avoid": avoid, "countries": countries, "residence": residence,
+                            "citizenships": citizenships, "languages": languages, "seniority": seniority,
+                            "open_to": open_to, "folder": folder})
+    return RedirectResponse("/setup/models", 303)
+
+
+@app.get("/setup/models", response_class=HTMLResponse)
+def setup_models(request: Request):
+    if not config.PREFS_PATH.exists():
+        return RedirectResponse("/setup", 303)
+    ollama = onboarding.ollama_running()
+    if not ollama:
+        onboarding.start_ollama()
+    else:
+        onboarding.start_pulls()
+    return templates.TemplateResponse(request, "setup_models.html", _setup_ctx(request, pulls=onboarding.pull_state()))
+
+
+@app.get("/setup/models/state", response_class=HTMLResponse)
+def setup_models_state(request: Request):
+    if onboarding.ollama_running():
+        onboarding.start_pulls()
+    return templates.TemplateResponse(request, "_setup_pulls.html", _setup_ctx(request, pulls=onboarding.pull_state()))
 
 
 # ---------------------------------------------------------------- profile (Home)

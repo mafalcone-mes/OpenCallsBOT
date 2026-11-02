@@ -9,7 +9,7 @@ import markdown as md
 from jinja2 import Environment, FileSystemLoader
 
 from vs import db, present
-from vs.config import APP_DIR, OUTPUT_DIR
+from vs.config import OUTPUT_DIR, RESOURCE_DIR
 from vs.pdf_export import ExportError, html_to_pdf
 
 
@@ -102,7 +102,7 @@ def write_run_report(run_id: int, counts: dict, sources: dict, *, pdf: bool = Tr
         soon = feed_rows(conn, "AND (u.favourite = 1 OR u.app_status IS NOT NULL) AND o.deadline != '' "
                                "AND o.deadline <= date('now', '+14 day')", (), 30)
     broken = {k: v for k, v in sources.items() if v.get("error")}
-    env = Environment(loader=FileSystemLoader(APP_DIR / "vs" / "web" / "templates"), autoescape=False)
+    env = Environment(loader=FileSystemLoader(RESOURCE_DIR / "vs" / "web" / "templates"), autoescape=False)
     env.globals.update(present=present)
     text = env.get_template("report.md.j2").render(
         when=datetime.now().strftime("%d %b %Y %H:%M"), counts=counts, sources=sources, broken=broken,

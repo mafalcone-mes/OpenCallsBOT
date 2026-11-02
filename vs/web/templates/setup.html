@@ -1,0 +1,71 @@
+{% extends "_bare.html" %}
+{% block title %}Welcome{% endblock %}
+{% block main %}
+<h1>Welcome</h1>
+<p class="lede">Oppo looks for jobs, residencies, open calls and grants that fit your work. Everything runs on this computer and stays here. Three steps, then Oppo downloads its AI models.</p>
+
+{% set errors = {'no-portfolio': 'Add your portfolio PDF (or the folder of your portfolio).',
+                 'no-folder': 'That folder doesn\'t exist on this computer.',
+                 'no-roles': 'Write at least one role or field you are looking for.',
+                 'too-big': 'That file is too big (portfolio up to 60 MB, CV up to 20 MB).',
+                 'wrong-type': 'Only PDF files, please.'} %}
+{% if error in errors %}<div class="notice" role="alert">{{ errors[error] }}</div>{% endif %}
+
+<section class="step" aria-labelledby="s1">
+  <h2 id="s1"><span class="step-n">1</span> Ollama, the free engine for the AI models</h2>
+  {% if ollama %}
+  <p class="ok with-icon">{{ icon('check', 18) }} Ollama is running.</p>
+  {% else %}
+  <p>Oppo needs <strong>Ollama</strong> (free) to run its AI models on your computer. Install it, open it, then come back here.</p>
+  <p class="actions"><a class="btn primary" href="{{ ollama_url }}" target="_blank" rel="noopener">{{ icon('download', 18) }} Download Ollama</a>
+     <a class="btn" href="/setup">{{ icon('refresh-cw', 18) }} I installed it: check again</a></p>
+  <p class="small muted">You can fill in the steps below meanwhile; they are kept when you press Continue.</p>
+  {% endif %}
+</section>
+
+<form method="post" action="/setup" enctype="multipart/form-data">
+<section class="step" aria-labelledby="s2">
+  <h2 id="s2"><span class="step-n">2</span> Your portfolio</h2>
+  <p class="small muted">Oppo reads it to know what you do. It is only read, never sent anywhere.</p>
+  <label for="portfolio">Portfolio (PDF)</label>
+  <input type="file" id="portfolio" name="portfolio" accept="application/pdf,.pdf">
+  <label for="cv">CV (PDF, optional)</label>
+  <input type="file" id="cv" name="cv" accept="application/pdf,.pdf">
+  <details class="more">
+    <summary class="small">I have my portfolio as a folder of texts (advanced)</summary>
+    <label for="folder">Folder path (with profile.md and projects/)</label>
+    <input type="text" id="folder" name="folder" placeholder="e.g. C:\Users\me\my-portfolio">
+  </details>
+</section>
+
+<section class="step" aria-labelledby="s3">
+  <h2 id="s3"><span class="step-n">3</span> What you are looking for</h2>
+  <label for="roles">Roles and fields, separated by commas (in every language you read)</label>
+  <input type="text" id="roles" name="roles" required placeholder="graphic designer, grafico, photographer, fotograf*">
+  <label for="avoid">What puts you off (optional)</label>
+  <input type="text" id="avoid" name="avoid" placeholder="senior, 5+ years, sales">
+  <label for="countries">Countries for job boards (optional)</label>
+  <input type="text" id="countries" name="countries" placeholder="italy, netherlands, germany">
+  <fieldset class="checks">
+    <legend class="small muted">Open to</legend>
+    {% for o in open_to %}<label class="check"><input type="checkbox" name="open_to" value="{{ o }}" checked> {{ o }}</label>{% endfor %}
+  </fieldset>
+  <label for="seniority">Level</label>
+  <select id="seniority" name="seniority">{% for s in seniority %}<option value="{{ s }}">{{ s or '—' }}</option>{% endfor %}</select>
+  <details class="more">
+    <summary class="small">Facts for eligibility (optional, never shared)</summary>
+    <label for="citizenships">Citizenships (country codes)</label>
+    <input type="text" id="citizenships" name="citizenships" placeholder="IT">
+    <label for="residence">Country you live in (code)</label>
+    <input type="text" id="residence" name="residence" placeholder="NL">
+    <label for="languages">Languages you would apply in (codes)</label>
+    <input type="text" id="languages" name="languages" placeholder="it, en">
+    <label for="email">Email (optional: sites see it as your contact when Oppo reads them)</label>
+    <input type="text" id="email" name="email" inputmode="email" autocomplete="email">
+  </details>
+</section>
+
+<p class="actions"><button class="btn primary">{{ icon('arrow-right', 18) }} Continue</button></p>
+<p class="small muted">You can change all of this later in Taste and on Home.</p>
+</form>
+{% endblock %}

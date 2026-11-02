@@ -1,0 +1,26 @@
+<!doctype html>
+{# Pages shown before the app is ready or after the beta ended: no side bar,
+   no database. Welcome (setup.html, setup_models.html) and beta_over.html. #}
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Welcome{% endblock %} · Oppo</title>
+<script>
+  try { const t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Bricolage+Grotesque:opsz,wght@12..96,400..700&display=swap" rel="stylesheet">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="stylesheet" href="{{ static_url('app.css') }}">
+<script src="{{ static_url('htmx.min.js') }}" defer></script>
+</head>
+<body class="bare">
+<main id="content" class="welcome">
+  <p class="brand">{{ oppo(size=28) }} Oppo{% if beta.active %} <span class="chip">beta</span>{% endif %}</p>
+  {% block main %}{% endblock %}
+  {% if feedback_url %}<p class="small muted welcome-foot"><a href="{{ feedback_url }}" target="_blank" rel="noopener">Send feedback about the beta</a></p>{% endif %}
+</main>
+</body>
+</html>

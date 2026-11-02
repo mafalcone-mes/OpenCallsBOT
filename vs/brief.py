@@ -14,7 +14,7 @@ from jinja2 import Environment, FileSystemLoader
 
 from vs import db, embed, llm, present
 from vs import portfolio as portfolio_mod
-from vs.config import APP_DIR, OUTPUT_DIR, prefs
+from vs.config import OUTPUT_DIR, RESOURCE_DIR, prefs
 from vs.ics import to_ics
 from vs.pdf_export import ExportError, export_portfolio, html_to_pdf
 
@@ -176,7 +176,7 @@ def generate(opportunity_id: int, *, make_pdf: bool = True, log=print) -> dict:
         "location": present.location(o), "type": present.TYPE_LABELS.get(o.get("type"), o.get("type")),
         "anonymous": anonymous,
     }
-    env = Environment(loader=FileSystemLoader(APP_DIR / "vs" / "web" / "templates"), autoescape=False)
+    env = Environment(loader=FileSystemLoader(RESOURCE_DIR / "vs" / "web" / "templates"), autoescape=False)
     md_text = env.get_template("brief.md.j2").render(**brief)
     (out_dir / "brief.md").write_text(md_text, encoding="utf-8")
     html = env.get_template("print.html.j2").render(title=f"Brief: {o.get('title_en')}",
