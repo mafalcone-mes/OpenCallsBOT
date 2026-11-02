@@ -96,7 +96,8 @@ def checklist(o: dict, portfolio, me: dict) -> list[dict]:
         if kind == "portfolio" or kind == "work_samples":
             status = "generated below (portfolio.pdf)"
         elif kind == "cv":
-            status = "available (website cv.pdf)" if portfolio.has_cv else "missing: no cv.pdf in the website folder"
+            status = ("available (uploaded cv.pdf)" if "cv" in portfolio.uploaded else "available (portfolio cv.pdf)"
+                      ) if portfolio.has_cv else "missing: add cv.pdf to your portfolio, or upload it on Home"
         elif kind in ("id_document", "diploma"):
             status = "gather"
         items.append({"label": present.DOC_LABELS.get(kind, kind), "details": d.get("details", ""),

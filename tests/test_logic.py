@@ -111,3 +111,11 @@ def test_the_score_measures_closeness_to_you_not_rank_in_the_batch():
     # With no stars yet, taste counts nothing (instead of dragging every score down).
     assert round(absolute_score(0.6, 0.0, 0.6, 0.0, score_parts(w, n_eff=0)), 6) == 60
     assert 0 <= absolute_score(-5, -5, 0.0, -1, parts) and absolute_score(9, 9, 1.0, 9, parts) <= 100
+
+
+def test_a_saved_explanation_reads_decoded_and_text_rows():
+    from vs.score import _saved_explanation
+    text = {"llm_fit": 4, "reasons": '["fits"]', "red_flags": "[]", "suggested_projects": "[]", "similar_examples": '["x"]', "cluster": ""}
+    decoded = {**text, "reasons": ["fits"], "red_flags": [], "suggested_projects": [], "similar_examples": ["x"]}
+    assert _saved_explanation(text) == _saved_explanation(decoded)
+    assert _saved_explanation(decoded)["reasons"] == ["fits"] and _saved_explanation(decoded)["similar_to"] == "x"

@@ -18,6 +18,8 @@
   {% if board.deleted %}<ul class="tlist">{% for c in board.deleted %}{% include "_todo_card.html" %}{% endfor %}</ul>
   {% else %}<p class="muted" style="margin-top:var(--s-24)">Nothing deleted.</p>{% endif %}
 {% else %}
+{% include "_calendar.html" %}
+
 <div class="tbar">
   <div class="tfilter" role="group" aria-label="Show calls still to send">
     <button type="button" class="btn on" data-filter="" aria-pressed="true">All</button>
@@ -108,21 +110,25 @@
   }
 
   // Menus: one open at a time, floating next to their button (above it if
-  // there is no room below); a click elsewhere, Escape or scrolling closes them.
+  // there is no room below). They follow their button when the page scrolls,
+  // and close on a click elsewhere, Escape, or when the button leaves the screen.
   const closeMenus = () => document.querySelectorAll("details.menu[open]").forEach(d => d.open = false);
   document.addEventListener("click", e => document.querySelectorAll("details.menu[open]").forEach(d => { if (!d.contains(e.target)) d.open = false; }));
   document.addEventListener("keydown", e => { if (e.key === "Escape") document.querySelectorAll("details.menu[open]").forEach(d => { d.open = false; d.querySelector("summary").focus(); }); });
-  document.addEventListener("toggle", e => {
-    const d = e.target;
-    if (!d.matches?.("details.menu")) return;
+  function placeMenu(d) {
     const list = d.querySelector(".menu-list");
-    if (!d.open) { list.style.cssText = ""; return; }
     const r = d.querySelector("summary").getBoundingClientRect(), h = list.offsetHeight;
+    if (r.bottom < 0 || r.top > innerHeight) { d.open = false; return; }
     const below = r.bottom + 4 + h <= innerHeight;
     list.style.cssText = `position:fixed; right:${Math.max(8, innerWidth - r.right)}px; ` +
       (below ? `top:${r.bottom + 4}px` : `top:${Math.max(8, r.top - 4 - h)}px`);
+  }
+  document.addEventListener("toggle", e => {
+    const d = e.target;
+    if (!d.matches?.("details.menu")) return;
+    if (d.open) placeMenu(d); else d.querySelector(".menu-list").style.cssText = "";
   }, true);
-  addEventListener("scroll", closeMenus, { passive: true });
+  addEventListener("scroll", () => document.querySelectorAll("details.menu[open]").forEach(placeMenu), { passive: true });
 
   // Filter by what is missing, search, sort (kept in this browser)
   let filter = "";

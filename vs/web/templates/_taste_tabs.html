@@ -1,0 +1,7 @@
+{# Taste, Sources and Studios are one page in the side bar, as three tabs.
+   Each keeps its own address, so links and the back button keep working. #}
+<nav class="subnav" aria-label="Taste, sources and studios">
+  {% for t, href, label, ic in [('taste', '/taste', 'Taste', 'sparkles'), ('sources', '/sources', 'Sources', 'globe'), ('studios', '/studios', 'Studios', 'building-2')] %}
+  <a href="{{ href }}" {{ 'aria-current=page' if tab == t }}>{{ icon(ic) }} {{ label }}</a>
+  {% endfor %}
+</nav>

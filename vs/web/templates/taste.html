@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Taste{% endblock %}
 {% block main %}
+{% set tab = 'taste' %}{% include "_taste_tabs.html" %}
 <h1>What the app thinks you like</h1>
 <p class="lede">Built from your portfolio, your preferences file, the examples you add, and your favourites and dismissals (older signals fade). Correct it below; your corrections go into every ranking.</p>
 {% if prefill.get('added') %}<div class="notice">Example saved. It's being read in the background; refresh this page in a minute.</div>{% endif %}
@@ -8,7 +9,7 @@
 <div class="two" style="margin-top:24px">
   <div>
     <div class="box">
-      <h3>Summary</h3>
+      <h2 class="box-title">Summary</h2>
       {% if taste_sum %}
         <p style="margin:8px 0">{{ taste_sum.paragraph }}</p>
         {% if taste_sum.themes %}<p class="small"><span class="muted">Themes:</span> {{ taste_sum.themes | join(' · ') }}</p>{% endif %}
@@ -22,7 +23,7 @@
     </div>
 
     <div class="box" style="margin-top:16px">
-      <h3>From the numbers</h3>
+      <h2 class="box-title">From the numbers</h2>
       <p class="small muted">{{ stats.n_pos }} positive and {{ stats.n_neg }} negative signals · taste weight now {{ '%.2f' | format(scored.get('w_taste', 0)) }} (full at {{ 15 }} effective examples, currently {{ '%.1f' | format(scored.get('n_eff', 0)) }})</p>
       {% if stats.themes %}<p class="small" style="margin-top:8px"><span class="muted">Words in what you like:</span> {{ stats.themes | join(', ') }}</p>{% endif %}
       {% if stats.anti_themes %}<p class="small"><span class="muted">Words in what you don't:</span> {{ stats.anti_themes | join(', ') }}</p>{% endif %}
@@ -32,18 +33,19 @@
     </div>
 
     <form class="box" id="corrections" style="margin-top:16px" method="post" action="/taste/statements">
-      <h3>Your corrections</h3>
+      <h2 class="box-title">Your corrections</h2>
       <p class="small muted">One statement per line, e.g. “I'm not interested in pure UX roles at tech companies”. Each line counts like an example you liked, and is read by the model when it explains matches. Saved to preferences.toml.</p>
       {% if prefill.get('saved') == 'corrections' %}
       <div class="notice">Saved {{ statements | length }} correction{{ 's' if statements | length != 1 }}. They change the ranking at the next scoring: press <strong>Re-score now</strong> (about 10 minutes), or they'll apply at your next Refresh. Corrections change the ranking of what's already found; to find new <em>kinds</em> of calls, add sources or job searches in <code>preferences.toml</code>.</div>
       {% endif %}
-      <textarea name="text">{{ statements | join('\n') }}</textarea>
+      <label for="corrections-text" class="sr-only">Your corrections, one per line</label>
+      <textarea id="corrections-text" name="text">{{ statements | join('\n') }}</textarea>
       <button class="btn" style="margin-top:8px">Save corrections</button>
     </form>
     <form method="post" action="/rescore" style="margin-top:8px"><button class="btn {{ 'primary' if prefill.get('saved') }}">Re-score now</button></form>
 
     <div class="box" style="margin-top:16px">
-      <h3>Is it learning?</h3>
+      <h2 class="box-title">Is it learning?</h2>
       <p class="small muted">Hides some of your examples, mixes them into the scraped calls, and checks where they rank without and with your taste.</p>
       {% if evals %}
       <table>
@@ -66,7 +68,7 @@
 
     {% if suggestions %}
     <div class="box" id="suggestions" style="margin-top:16px">
-      <h3>Suggested sources to watch</h3>
+      <h2 class="box-title">Suggested sources to watch</h2>
       <p class="small muted">Found from organisations of examples you liked. Nothing is watched until you accept.</p>
       {% for s in suggestions %}
       <form method="post" action="/sources/suggestion" style="margin-top:12px">

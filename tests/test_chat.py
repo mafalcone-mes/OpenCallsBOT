@@ -99,11 +99,18 @@ def test_the_question_decides_what_the_plan_keeps():
     assert chat._stem("musei") in "museum, design" and chat._stem("museums") in "museum"
 
 
-def test_home_is_the_chat_and_the_feed_moved():
+def test_home_has_the_hero_and_a_question_opens_a_chat():
     from vs.web.app import app
     client = TestClient(app)
     home = client.get("/").text
-    assert 'hx-post="/chat/ask"' in home and 'href="/feed"' in home
+    hero = home.split('class="hero"')[1].split("</section>")[0]
+    assert 'action="/ask"' in hero and 'href="/ask?q=my+saved+ones"' in hero and 'hx-post="/chat/warm"' in hero
+    assert 'href="/feed"' in home and 'id="closing-h"' in home  # the sections below the hero
+    assert 'id="sb-rail"' in home and 'title="Home"' in home  # the side bar collapses; Oppo leads Home
+    r = client.get("/ask", follow_redirects=False)  # no empty chat page
+    assert r.status_code == 303 and r.headers["location"] == "/"
+    page = client.get("/ask?q=museums").text
+    assert 'ask("museums")' in page and 'hx-post="/chat/ask"' in page and "data-state" not in page
     assert client.get("/feed").status_code == 200
     r = client.post("/chat/ask", data={"q": "", "plan": '{"intent": "help"}'})
     assert "What I can do" in r.text and 'id="chat-last"' in r.text
@@ -117,7 +124,7 @@ def test_a_chat_is_saved_and_can_be_continued():
     assert 'id="chat-id" value="%d"' % cid in r.text and 'id="sb-chats"' in r.text
     client.post("/chat/ask", data={"q": "and again", "plan": '{"intent": "help"}', "chat_id": str(cid)})
     page = client.get(f"/chat/{cid}").text
-    assert "help me" in page and "and again" in page and 'data-state="chat"' in page
+    assert "help me" in page and "and again" in page and 'id="chat-form"' in page
     assert f'href="/chat/{cid}"' in client.get("/").text  # in the side bar
 
 
@@ -146,9 +153,10 @@ def test_todo_board_moves_cards_in_bulk_and_restores_deleted_calls():
         b = todo.board(conn)
     assert [c["key"] for c in b["todo"]] == [f"call:{oid}", f"own:{own}"] and b["todo"][0]["sub"] == "Next: check what they ask for"
     client = TestClient(app)
-    first = client.get("/feed").text
-    assert 'id="deadline-alert"' in first and "Photo residency" in first
-    assert 'id="deadline-alert"' not in client.get("/feed").text  # once a day
+    # what closes within a week is on Today (no pop-up any more)
+    today = client.get("/").text
+    assert "Photo residency" in today.split('id="closing-h"')[1].split("</section>")[0]
+    assert 'id="deadline-alert"' not in client.get("/feed").text
     assert client.get("/tracker", follow_redirects=False).headers["location"] == "/todo"
     # both selected, moved to In progress at once: the call's application status follows
     client.post("/todo/act", data={"keys": [f"call:{oid}", f"own:{own}"], "action": "progress"})
@@ -297,3 +305,84 @@ def test_todo_lists_only_the_documents_a_call_asks_for_and_groups_by_what_is_mis
         assert todo.find(todo.board(conn), own["key"])["title"] == "Print two CVs"
     page = client.get("/todo").text
     assert "Missing portfolio" in page and "Missing other documents" in page and "max 10 pages PDF" in page
+
+
+def test_clearing_the_feed_hides_what_is_there_keeps_saved_ones_and_can_be_undone():
+    from vs.web.app import app
+    later = (date.today() + timedelta(days=40)).isoformat()
+    with db.session() as conn:
+        _reset(conn)
+        db.kv_set(conn, "feed_cleared_at", "")
+        _add(conn, "k-old", later, title="Old residency")
+        _add(conn, "k-kept", later, title="Saved residency")
+        conn.execute("INSERT INTO user_state(opportunity_key, favourite) VALUES('k-kept', 1)")
+    client = TestClient(app)
+    assert "Old residency" in client.get("/feed?g=residencies").text
+    client.post("/feed/clear")
+    page = client.get("/feed?g=residencies").text
+    assert "Old residency" not in page and "Saved residency" in page and "Show everything again" in page
+    with db.session() as conn:  # found by a later refresh: shown
+        conn.execute("UPDATE opportunity SET first_seen = '2999-01-01T00:00:00+00:00' WHERE dedup_key = 'k-old'")
+    assert "Old residency" in client.get("/feed?g=residencies").text
+    with db.session() as conn:
+        conn.execute("UPDATE opportunity SET first_seen = '2020-01-01T00:00:00+00:00' WHERE dedup_key = 'k-old'")
+    client.post("/feed/clear", data={"undo": "1"})
+    assert "Old residency" in client.get("/feed?g=residencies").text
+
+
+def test_progress_says_interrupted_not_finished_after_the_app_restarted_mid_refresh(monkeypatch):
+    from vs import pipeline
+    from vs.web.app import app
+    monkeypatch.setitem(pipeline._state, "lines", [])  # a fresh app: nothing ran in this process
+    monkeypatch.setitem(pipeline._state, "running", False)
+    with db.session() as conn:
+        conn.execute("DELETE FROM run WHERE status = 'running'")
+        conn.execute("INSERT INTO run(started, status) VALUES('2020-01-01T10:00:00+00:00', 'running')")
+    page = TestClient(app).get("/progress").text
+    assert "was interrupted" in page and "Finished" not in page
+    with db.session() as conn:
+        conn.execute("DELETE FROM run WHERE status = 'running'")
+    assert "Finished" in TestClient(app).get("/progress").text
+
+
+def test_the_ask_page_loads_the_model_while_you_type(monkeypatch):
+    from fastapi.testclient import TestClient
+    from vs import pipeline
+    from vs.web.app import app
+    warmed = []
+    monkeypatch.setattr(llm, "warm", lambda *a, **k: warmed.append(1))
+    client = TestClient(app)
+    assert 'hx-post="/chat/warm"' in client.get("/").text
+    assert client.post("/chat/warm").status_code == 204
+    import time
+    for _ in range(50):
+        if warmed:
+            break
+        time.sleep(0.01)
+    assert warmed
+    # not during a refresh: its agents decide what is in video memory
+    warmed.clear()
+    monkeypatch.setitem(pipeline._state, "running", True)
+    assert client.post("/chat/warm").status_code == 204
+    time.sleep(0.05)
+    assert not warmed
+
+
+def test_a_list_named_in_the_question_is_shown_not_changed():
+    # The model may call "my saved ones" an action or ask for help: no action
+    # word is in it, so it is a search of the saved list.
+    acted = chat.ground({**chat.EMPTY_PLAN, "intent": "action", "action": "save", "status": "favourite"}, "my saved ones")
+    assert acted["intent"] == "search" and acted["action"] == "" and acted["status"] == "favourite"
+    helped = chat.ground({**chat.EMPTY_PLAN, "intent": "help", "status": "favourite"}, "my saved ones", context="x")
+    assert helped["intent"] == "search" and helped["status"] == "favourite"
+    # a real action still is one
+    saved = chat.ground(dict(chat.EMPTY_PLAN), "save 1 and 3", n_shown=5)
+    assert saved["intent"] == "action" and saved["action"] == "save" and saved["targets"] == [1, 3]
+
+
+def test_a_question_from_home_waits_for_htmx_before_it_is_sent():
+    # Asked before htmx has wired the form, it showed on screen but was never sent.
+    from vs.web.app import app
+    page = TestClient(app).get("/ask?q=museums").text
+    script = page.split('ask("museums")')[0].rsplit("<script>", 1)[1]
+    assert "htmx:load" in script and "DOMContentLoaded" not in script

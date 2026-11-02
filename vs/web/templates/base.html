@@ -3,14 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}Opportunities{% endblock %} · vacancies searcher</title>
+<title>{% block title %}Opportunities{% endblock %} · Oppo</title>
 <script>
   // The theme you chose (light / dark), before the page paints; none = follow the system.
   try { const t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+  // The side bar you collapsed to icons on a wide screen, also before the page paints.
+  try { if (localStorage.getItem("sidebar") === "rail") document.documentElement.dataset.sb = "rail"; } catch (e) {}
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Bricolage+Grotesque:opsz,wght@12..96,400..700&display=swap" rel="stylesheet">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="stylesheet" href="{{ static_url('app.css') }}">
 <script src="{{ static_url('htmx.min.js') }}" defer></script>
 </head>
@@ -20,25 +23,29 @@
 {# Side bar, as in AI chat apps: the pages, your last chats, and the refresh state. #}
 <aside class="sidebar" id="sidebar" aria-label="Pages and chats">
   <div class="sb-head">
-    <a class="brand" href="/">Opportunities</a>
+    <a class="brand" href="/" title="Home">{{ oppo(size=28) }} <span class="sb-text">Oppo</span></a>
     <button class="btn ghost sb-close" type="button" onclick="toggleSidebar(false)" aria-label="Close the menu">{{ icon('x', 20) }}</button>
+    {# wide screens: shrink the bar to a column of icons, or open it again #}
+    <button class="btn ghost sb-rail" type="button" id="sb-rail" onclick="toggleRail()" aria-controls="sidebar" aria-expanded="true"
+            aria-label="Collapse the menu" title="Collapse the menu">{{ icon('panel-left', 20) }}</button>
   </div>
-  <a class="btn sb-new" href="/">{{ icon('plus') }} New question</a>
-  <a class="sb-todo {{ 'on' if view == 'todo' }}" href="/todo" {{ 'aria-current=page' if view == 'todo' }}><span class="sb-label">{{ icon('list-todo', 18) }} To-do</span>{% if todo_open %} <span class="count" aria-label="{{ todo_open }} open">{{ todo_open }}</span>{% endif %}</a>
+  <a class="btn sb-new" href="/#q" title="New question">{{ icon('plus') }} <span class="sb-text">New question</span></a>
+  {# In the order of the work: home, find, prepare, record, teach. #}
   <nav class="sb-nav" aria-label="Main">
-    {% for v, href, label, ic in [('chat', '/', 'Ask', 'message-circle'), ('feed', '/feed', 'Feed', 'newspaper'), ('discovery', '/discovery', 'Discovery', 'compass'), ('calendar', '/calendar', 'Calendar', 'calendar'), ('archive', '/archive', 'Archive', 'archive'), ('studios', '/studios', 'Studios', 'building-2'), ('taste', '/taste', 'Taste', 'sparkles'), ('sources', '/sources', 'Sources', 'globe')] %}
-    <a href="{{ href }}" class="{{ 'on' if view == v }}" {{ 'aria-current=page' if view == v }}>{{ icon(ic, 18) }} {{ label }}</a>
+    {% for v, href, label, ic in [('home', '/', 'Home', 'house'), ('feed', '/feed', 'Feed', 'newspaper'), ('discovery', '/discovery', 'Discovery', 'compass'), ('todo', '/todo', 'To-do', 'list-todo'), ('archive', '/archive', 'Archive', 'archive'), ('taste', '/taste', 'Taste', 'sparkles')] %}
+    <a href="{{ href }}" class="{{ 'on' if view == v }}" title="{{ label }}" {{ 'aria-current=page' if view == v }}>{{ icon(ic, 18) }} <span class="sb-text">{{ label }}</span>{% if v == 'todo' and todo_open %} <span class="count" aria-label="{{ todo_open }} open">{{ todo_open }}</span>{% endif %}</a>
     {% endfor %}
   </nav>
   {% include "_sb_chats.html" %}
   <div class="sb-status">
     {% if deadlines_week %}<a href="/calendar" class="warn">{{ deadlines_week }} tracked deadline{{ 's' if deadlines_week != 1 }} this week</a>{% endif %}
-    {% if last_refresh_days is none %}<span class="stale">Never refreshed</span>
-    {% elif last_refresh_days >= 7 %}<span class="stale">Last refreshed {{ last_refresh_days }} days ago</span>
+    {% if last_refresh_days is none %}<span class="stale with-icon">{{ oppo('sleep', 20) }} Never refreshed</span>
+    {% elif last_refresh_days >= 7 %}<span class="stale with-icon">{{ oppo('sleep', 20) }} Last refreshed {{ last_refresh_days }} days ago</span>
     {% else %}<span>Refreshed {{ 'today' if last_refresh_days == 0 else last_refresh_days ~ ' day' ~ ('s' if last_refresh_days > 1 else '') ~ ' ago' }}</span>{% endif %}
     <div class="sb-actions">
-      <form method="post" action="/refresh"><button class="btn" {{ 'disabled' if progress.running }}>{{ icon('refresh-cw') }} {{ 'Refreshing…' if progress.running else 'Refresh' }}</button></form>
-      {% if progress.running and progress.kind == 'refresh' %}<form method="post" action="/stop"><button class="btn" {{ 'disabled' if progress.stopping }}>{{ icon('circle-stop') }} {{ 'Stopping…' if progress.stopping else 'Stop' }}</button></form>{% endif %}
+      {% set r_label = 'Refreshing…' if progress.running else 'Refresh' %}
+      <form method="post" action="/refresh"><button class="btn" title="{{ r_label }}" {{ 'disabled' if progress.running }}>{{ icon('refresh-cw') }} <span class="sb-text">{{ r_label }}</span></button></form>
+      {% if progress.running and progress.kind == 'refresh' %}{% set s_label = 'Stopping…' if progress.stopping else 'Stop' %}<form method="post" action="/stop"><button class="btn" title="{{ s_label }}" {{ 'disabled' if progress.stopping }}>{{ icon('circle-stop') }} <span class="sb-text">{{ s_label }}</span></button></form>{% endif %}
     </div>
     <div class="theme-switch" role="group" aria-label="Theme">
       {% for v, label, ic in [('light', 'Light', 'sun'), ('dark', 'Dark', 'moon'), ('', 'System', 'monitor')] %}
@@ -52,7 +59,7 @@
 <div class="page">
   <header class="mobile-bar">
     <button class="btn" type="button" onclick="toggleSidebar(true)" aria-controls="sidebar" aria-expanded="false" id="sb-open">{{ icon('menu', 18) }} Menu</button>
-    <a class="brand" href="/">Opportunities</a>
+    <a class="brand" href="/">{{ oppo(size=28) }} Oppo</a>
   </header>
   {% if progress.running %}
   <div class="page-progress" hx-get="/progress" hx-trigger="every 3s" hx-swap="innerHTML">{% include "_progress.html" %}</div>
@@ -69,37 +76,6 @@
 
 <div class="toast" id="toast" role="alert" hidden></div>
 
-{% if deadline_alert %}
-{# Once a day: the saved calls and applications that close within a week. #}
-<dialog class="alert" id="deadline-alert" aria-labelledby="alert-title">
-  <h2 id="alert-title">Closing soon</h2>
-  <p class="small muted">Saved calls and applications to send that close within 7 days.</p>
-  <ul>
-    {% for o in deadline_alert %}{% set dl_main, dl_when = present.deadline_parts(o.deadline, o.deadline_kind) %}
-    <li><a href="/o/{{ o.id }}">{{ o.title_en or o.title_original }}</a>
-      <span class="small muted">{{ o.org_name or '' }}{{ ' · ' if o.org_name }}{{ (o.app_status or 'saved') | replace('_', ' ') }}</span>
-      <strong class="soon small">{{ dl_main }}{% if dl_when %} · {{ dl_when }}{% endif %}</strong></li>
-    {% endfor %}
-  </ul>
-  <form method="dialog" class="alert-actions">
-    <a class="btn primary" href="/todo">Open the to-do list</a>
-    <button class="btn" autofocus>Remind me tomorrow</button>
-  </form>
-</dialog>
-<script>document.getElementById("deadline-alert").showModal();</script>
-{% endif %}
-{% if recap_offer %}
-{# Once a month: go through the record and the clean-up together. #}
-<dialog class="alert" id="recap-offer" aria-labelledby="recap-title">
-  <h2 id="recap-title">Time for the monthly recap</h2>
-  <p class="small muted">Set how your applications went, decide about saved calls that closed, and see what the app cleaned this month. It takes a couple of minutes.</p>
-  <form method="dialog" class="alert-actions">
-    <a class="btn primary" href="/recap">Open the recap</a>
-    <button class="btn" autofocus>Later</button>
-  </form>
-</dialog>
-<script>document.getElementById("recap-offer").showModal();</script>
-{% endif %}
 <script>
   // A click that fails (app restarting, database busy) says so instead of doing nothing.
   document.addEventListener("htmx:responseError", e => showToast("That didn't work (" + e.detail.xhr.status + "). Try again in a moment."));
@@ -116,6 +92,17 @@
     document.getElementById("sb-open").setAttribute("aria-expanded", open);
     if (open) document.querySelector(".sb-nav a")?.focus();
   }
+  // Wide screens: the side bar collapses to a column of icons (labels become
+  // tooltips and stay readable to screen readers), remembered in this browser.
+  function toggleRail(rail) {
+    const root = document.documentElement;
+    rail = rail ?? root.dataset.sb !== "rail";
+    if (rail) root.dataset.sb = "rail"; else delete root.dataset.sb;
+    try { rail ? localStorage.setItem("sidebar", "rail") : localStorage.removeItem("sidebar"); } catch (e) {}
+    const b = document.getElementById("sb-rail"), label = rail ? "Expand the menu" : "Collapse the menu";
+    b.setAttribute("aria-expanded", String(!rail)); b.setAttribute("aria-label", label); b.title = label;
+  }
+  toggleRail(document.documentElement.dataset.sb === "rail");
   // Light / Dark / System, remembered in this browser.
   function setTheme(v) {
     if (v) document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme;

@@ -16,7 +16,8 @@
 {% set dl = present.days_left(o.deadline) %}
 {% set dl_main, dl_when = present.deadline_parts(o.deadline, o.deadline_kind) %}
 {% set elig = [('age ' ~ (el.age_min or '') ~ '–' ~ (el.age_max or '')) if (el.age_min or el.age_max) else '', (el.nationalities or []) | join(', '), ('residence ' ~ (el.residence or []) | join(', ')) if el.residence else '', el.education or '', el.career_stage or ''] | select | join(' · ') %}
-<p class="small muted"><a class="with-icon" href="javascript:history.back()">{{ icon('chevron-left', 14) }}Back</a></p>
+<p class="small muted">{# Back to where you came from in the app; opened from elsewhere (a new tab, a link), to the feed. #}
+<a class="with-icon" href="/feed" onclick="if (document.referrer.startsWith(location.origin) && history.length > 1) { history.back(); return false; }">{{ icon('chevron-left', 14) }}Back</a></p>
 <h1 class="detail-title">{{ o.title_en or o.title_original }}</h1>
 {% if o.title_original and o.title_original != o.title_en %}<p class="muted">{{ o.title_original }}</p>{% endif %}
 <p class="lede">{{ o.org_name or 'Organisation unclear' }} · <span class="with-icon">{{ icon(present.TYPE_ICONS.get(o.type, 'circle-dot')) }}{{ present.TYPE_LABELS.get(o.type, o.type) }}</span></p>

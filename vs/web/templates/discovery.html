@@ -8,6 +8,6 @@
   <h2>{{ cluster }}</h2>
   <div class="cards list">{% for o in rows %}{% include "_card.html" %}{% endfor %}</div>
 {% else %}
-  <div class="empty"><h2>Nothing to discover yet</h2><p>Discovery fills in after a refresh with at least a few dozen opportunities.</p><a class="btn primary" href="/feed">Back to the feed</a></div>
+  <div class="empty">{{ oppo('empty', 96) }}<h2>Nothing to discover yet</h2><p>Discovery fills in after a refresh with at least a few dozen opportunities.</p><a class="btn primary" href="/feed">Back to the feed</a></div>
 {% endfor %}
 {% endblock %}

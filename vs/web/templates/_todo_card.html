@@ -10,11 +10,10 @@
     {% if c.briefing %}hx-get="/todo/card?key={{ c.key | urlencode }}" hx-trigger="every 5s" hx-swap="outerHTML"{% endif %}>
   <input type="checkbox" name="keys" value="{{ c.key }}" form="todo-bulk" id="sel-{{ kid }}" aria-label="Select “{{ c.title }}”">
   <div class="tcard-body">
-    <span class="tag small">{{ 'Your item · ' if c.own }}{{ dict(kinds)[c.kind] }}</span>
     <p class="tcard-title">{{ c.title }}</p>
-    {% if c.org %}<p class="small muted">{{ c.org }}</p>{% endif %}
+    <p class="small tmeta">{{ 'Your item · ' if c.own }}{{ dict(kinds)[c.kind] }}{% if c.org %} · {{ c.org }}{% endif %}</p>
     {% if c.sub %}<p class="small tnext {{ 'ok' if c.outcome == 'selected' or c.group == 'ready' else 'muted' }}">{{ c.sub }}</p>{% endif %}
-    {% if dl_main %}<p class="small with-icon {{ 'soon' if days is not none and 0 <= days <= 7 else 'muted' }}">{{ icon('clock', 14) }}{{ dl_main }}{% if dl_when %} · {{ dl_when }}{% endif %}</p>{% endif %}
+    {% if dl_main %}<p class="small tdue with-icon {{ 'soon' if days is not none and 0 <= days <= 7 else 'muted' }}">{{ icon('clock', 14) }}{{ dl_main }}{% if dl_when %} · {{ dl_when }}{% endif %}</p>{% endif %}
     {% if c.docs %}
     <ul class="tdocs" aria-label="Documents they ask for">
       {% for d in c.docs %}
@@ -26,7 +25,7 @@
           {% if d.auto %}<span class="muted"> · portfolio PDF made</span>{% endif %}</span></label></li>
       {% endfor %}
     </ul>
-    {% elif c.group == 'unknown' %}<p class="small muted">The page didn't say which documents. Open the call, then add them with ⋯ → Edit.</p>{% endif %}
+    {% elif c.group == 'unknown' %}<p class="small muted tdocs-none">The page didn't say which documents. Open the call, then add them with ⋯ → Edit.</p>{% endif %}
     {% if c.note %}<p class="small tnote">{{ icon('file-text', 14) }} {{ c.note }}</p>{% endif %}
   </div>
   <details class="menu">

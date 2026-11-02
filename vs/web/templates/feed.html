@@ -3,6 +3,21 @@
 {% block main %}
 <h1>Feed</h1>
 <p class="lede">Each kind of opportunity has its own list, best match first. Money and fees are shown, never filtered out for you.</p>
+{# Clear the feed: hides what is here now (saved ones stay); nothing is deleted, so it can be undone. #}
+{% if cleared %}
+<div class="notice feed-cleared">
+  <span>Cleared on {{ present.run_label(cleared) }}: only what refreshes found since, plus your saved calls and applications.</span>
+  <form method="post" action="/feed/clear"><input type="hidden" name="undo" value="1"><button class="btn">{{ icon('rotate-ccw') }} Show everything again</button></form>
+</div>
+{% else %}
+<details class="feed-clear">
+  <summary class="btn ghost">{{ icon('eye-off') }} Clear the feed</summary>
+  <div class="feed-clear-body">
+    <p class="small">Hides everything in the feed now, so the next refresh shows only what's new. Saved calls and applications stay. Nothing is deleted: you can show it all again.</p>
+    <form method="post" action="/feed/clear"><button class="btn primary">Clear the feed</button></form>
+  </div>
+</details>
+{% endif %}
 {% if portfolio.warnings %}
 <details class="warnings"><summary>{{ portfolio.warnings | length }} note{{ 's' if portfolio.warnings | length != 1 }} about the portfolio content (fix these in the website)</summary>
   <ul>{% for w in portfolio.warnings %}<li>{{ w }}</li>{% endfor %}</ul>
@@ -51,14 +66,17 @@
   {% include "_feed_page.html" %}
 </div>
 {% elif only_new and not new_rows %}
-<div class="empty"><h2>Nothing new in {{ tab.label | lower }}</h2><p>The last refresh found no new ones.</p><a class="btn primary" href="/feed?g={{ tab.id }}">See the whole feed</a></div>
+<div class="empty">{{ oppo('empty', 96) }}<h2>Nothing new in {{ tab.label | lower }}</h2><p>The last refresh found no new ones.</p><a class="btn primary" href="/feed?g={{ tab.id }}">See the whole feed</a></div>
 {% elif new_rows %}
 {% else %}
 {# empty: say why, and offer the next step as a button #}
 <div class="empty">
+  {{ oppo('empty', 96) }}
   {% if tabs | sum(attribute='n') == 0 and not f %}
-    <h2>No opportunities yet</h2>
-    <p>The app hasn't searched your sources yet, or found nothing open.</p>
+    {% if cleared %}<h2>The feed is clear</h2>
+    <p>What the next refresh finds appears here.</p>
+    {% else %}<h2>No opportunities yet</h2>
+    <p>The app hasn't searched your sources yet, or found nothing open.</p>{% endif %}
     {% if not progress.running %}<form method="post" action="/refresh"><button class="btn primary">Search my sources</button></form>{% endif %}
   {% elif f %}
     <h2>No {{ tab.label | lower }} match {{ '“' ~ f.q ~ '”' if f.q else 'these filters' }}</h2>

@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Sources{% endblock %}
 {% block main %}
+{% set tab = 'sources' %}{% include "_taste_tabs.html" %}
 <h1>Sources</h1>
 <p class="lede">Where the app looks. The list comes from the shared sheet; pause a source on your copy here. A source is refetched at most every 12 hours unless you force it.</p>
 <p class="small muted" style="margin-top:8px">Database {{ db_mb }} MB{% if cleanup %} · last clean-up {{ cleanup.at[:16] | replace('T', ' ') }}: {{ cleanup.removed }} removed, {{ (cleanup.cache_bytes / 1e6) | round | int }} MB of saved pages freed{% endif %}.</p>
@@ -15,7 +16,7 @@
 </div>
 
 <table class="stack">
-  <tr><th>Source</th><th>Kind</th><th>Open items</th><th>Avg match</th><th>Kept</th><th>Last OK</th><th>Listed per run</th><th>Health</th><th></th></tr>
+  <tr><th>Source</th><th>Kind</th><th>Open items</th><th>Avg match</th><th>Kept</th><th>Last OK</th><th>Listed per run</th><th>Health</th><th><span class="sr-only">Actions</span></th></tr>
   {% for sid, cfg in configured %}{% set st = states.get(sid) %}
   {% set hist = (st.items_history if st else []) or [] %}
   {% set median = (hist | sort)[hist | length // 2] if hist else 0 %}

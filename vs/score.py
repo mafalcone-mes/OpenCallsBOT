@@ -237,10 +237,14 @@ def prepare(ctx: dict, o: dict, v: np.ndarray) -> dict:
 
 
 def _saved_explanation(prev: dict) -> dict:
-    return {"fit": prev["llm_fit"], "reasons": json.loads(prev["reasons"] or "[]"),
-            "red_flags": json.loads(prev["red_flags"] or "[]"),
-            "suggested_projects": json.loads(prev["suggested_projects"] or "[]"),
-            "similar_to": (json.loads(prev["similar_examples"] or "[]") or [""])[0],
+    # `prev` comes as a plain row (JSON as text, score_all) or through
+    # db.row_dict (already decoded, score_one): both are read the same way.
+    def listed(v):
+        return json.loads(v) if isinstance(v, (str, bytes)) else (v or [])
+    return {"fit": prev["llm_fit"], "reasons": listed(prev["reasons"] or "[]"),
+            "red_flags": listed(prev["red_flags"] or "[]"),
+            "suggested_projects": listed(prev["suggested_projects"] or "[]"),
+            "similar_to": (listed(prev["similar_examples"] or "[]") or [""])[0],
             "cluster": prev.get("cluster") or ""}
 
 

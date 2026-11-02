@@ -113,13 +113,14 @@ def test_recap_is_offered_once_a_month_and_forgets_unticked_calls():
         drop = _add(conn, "drop-me", status="expired", deadline=past)
         conn.execute("INSERT INTO user_state(opportunity_key, favourite) VALUES('keep-me', 1), ('drop-me', 1)")
     client = TestClient(app)
-    assert 'id="recap-offer"' in client.get("/archive").text
-    assert 'id="recap-offer"' not in client.get("/archive").text  # once a day at most
+    assert 'id="recap-h"' in client.get("/").text  # offered on Today until it is done
     page = client.get("/recap").text
     assert "keep-me" in page and "drop-me" in page
     client.post("/recap/done", data={"kept": [str(keep)], "seen": [str(keep), str(drop)]})
     with db.session() as conn:
         assert not housekeeping.recap_due(conn)
+    assert 'id="recap-h"' not in client.get("/").text
+    with db.session() as conn:
         housekeeping.clean(conn, PREFS)
         assert _status(conn, "keep-me") == "expired" and _status(conn, "drop-me") == "removed"
 
@@ -141,3 +142,12 @@ def test_pause_and_resume_a_source_on_your_copy(monkeypatch):
     assert saved["p"] == []
     client.post("/sources/pause", data={"sid": "unknown", "on": 1})
     assert saved["p"] == []
+
+
+def test_the_calendar_is_on_the_todo_page():
+    from vs.web.app import app
+    client = TestClient(app)
+    r = client.get("/calendar?month=2026-11&scope=all", follow_redirects=False)
+    assert r.status_code == 301 and r.headers["location"] == "/todo?month=2026-11&scope=all#calendar"
+    page = client.get("/todo?month=2026-11&scope=all").text
+    assert 'id="calendar"' in page and "November 2026" in page and 'class="tboard"' in page

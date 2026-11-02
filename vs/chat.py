@@ -23,7 +23,7 @@ import numpy as np
 from vs import db, embed, llm, present, report
 from vs.config import prefs
 
-PLAN_VERSION = 4
+PLAN_VERSION = 5
 INTENTS = ["search", "near_project", "sources", "studios", "projects", "action", "talk", "help"]
 HISTORY = 4  # earlier turns of the same chat the model sees
 ACTIONS = ["", "save", "unsave", "dismiss", "set_status", "refresh"]
@@ -242,6 +242,10 @@ def ground(plan: dict, question: str, n_shown: int = 0, context: str = "") -> di
             plan["app_status"] = next((s for s, ws in STATUS_WORDS.items() if _has(q, ws)), plan.get("app_status") or "")
             plan["reason"] = next((r for r, ws in REASON_WORDS.items() if _has(q, ws)), plan.get("reason") or "")
             return plan
+    if plan.get("intent") == "action":
+        # The model said "do something", but no action word is in the question
+        # ("my saved ones" is not "save"): it is a search, never a change.
+        plan.update(intent="search", action="", targets=[])
     plan["types"] = [t for t in plan.get("types") or [] if _has(q, TYPE_CUES.get(t, []))]
     if not plan["types"] and plan.get("intent") in ("search", "near_project"):
         plan["types"] = [t for t in SURE_TYPES if _has(asked, TYPE_CUES[t])]
@@ -265,6 +269,8 @@ def ground(plan: dict, question: str, n_shown: int = 0, context: str = "") -> di
     # Your own lists are named by a word in the question, whatever the model said.
     plan["status"] = next((s for s, cues in STATUS_CUES.items() if _has(asked, cues)), "") or \
         (plan.get("status") if plan.get("status") in STATUS_CUES and _has(q, STATUS_CUES[plan["status"]]) else "")
+    if plan["status"] and plan.get("intent") == "help" and _has(asked, STATUS_CUES[plan["status"]]):
+        plan["intent"] = "search"  # "my saved ones" names a list: show it
     # Words to find in the text must be in the question, and not be the kind,
     # place or list already filtered on ("residenze", "salvati").
     filtered = [c for cues in list(TYPE_CUES.values()) + list(STATUS_CUES.values()) + list(REGION_CUES.values()) for c in cues]

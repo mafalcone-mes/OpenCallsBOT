@@ -12,7 +12,7 @@ from html import escape as html_escape
 from pathlib import Path
 from urllib.parse import urlencode
 
-from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -27,7 +27,7 @@ from vs import report
 from vs.report import feed_counts, feed_rows
 
 HERE = Path(__file__).parent
-app = FastAPI(title="vacancies searcher")
+app = FastAPI(title="Oppo · vacancies searcher")
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.globals.update(present=present)
@@ -43,7 +43,8 @@ def static_url(name: str) -> str:
 
 templates.env.globals.update(static_url=static_url)
 from vs.web.icons import icon  # noqa: E402
-templates.env.globals.update(icon=icon)
+from vs.web.oppo import oppo, svg_source  # noqa: E402
+templates.env.globals.update(icon=icon, oppo=oppo)
 
 STATUSES = present.STATUSES
 DISMISS_REASONS = present.DISMISS_REASONS
@@ -69,8 +70,6 @@ def ctx(request: Request, **kw) -> dict:
         chats = chatlog.recent(conn)
         chats_total = chatlog.count(conn)
         todo_open = todo.open_count(conn)
-        alert = _deadline_alert(conn, request)
-        recap_offer = not alert and _recap_offer(conn, request)
     days = None
     if last:
         days = (date.today() - date.fromisoformat(last[:10])).days
@@ -79,34 +78,8 @@ def ctx(request: Request, **kw) -> dict:
     tokens = p.css_tokens if not isinstance(p, Exception) else {}
     return {"request": request, "portfolio": p, "last_refresh_days": days, "deadlines_week": soon,
             "last_visit": last_visit, "chats": chats, "chats_total": chats_total, "todo_open": todo_open,
-            "deadline_alert": alert, "recap_offer": recap_offer, "cat_colors": colors, "cat_labels": labels, "tokens": tokens,
+            "cat_colors": colors, "cat_labels": labels, "tokens": tokens,
             "progress": pipeline.progress_state(), "prefs_error": config.prefs_error, "sheet_error": prefs().get("_sheet_error"), **kw}
-
-
-def _deadline_alert(conn, request: Request) -> list[dict]:
-    """Saved calls closing within a week, shown in a pop-up on the first page
-    you open each day (never inside an htmx update)."""
-    if request.headers.get("hx-request"):
-        return []
-    today = date.today().isoformat()
-    if db.kv_get(conn, "deadline_alert_day") == today:
-        return []
-    rows = todo.closing_soon(conn)
-    if rows:
-        db.kv_set(conn, "deadline_alert_day", today)
-    return rows
-
-
-def _recap_offer(conn, request: Request) -> bool:
-    """The monthly recap is offered once a day until it is done for the month
-    (not on the day the deadline pop-up shows, nor on the recap itself)."""
-    if request.headers.get("hx-request") or request.url.path == "/recap" or not housekeeping.recap_due(conn):
-        return False
-    today = date.today().isoformat()
-    if db.kv_get(conn, "recap_offer_day") == today:
-        return False
-    db.kv_set(conn, "recap_offer_day", today)
-    return True
 
 
 def _mark_visit() -> None:
@@ -125,11 +98,22 @@ FILTERS = report.FILTERS
 STILL_OPEN = " AND o.status = 'open' AND (COALESCE(o.deadline, '') = '' OR o.deadline >= date('now'))"
 
 
+def _cleared_at() -> str:
+    """When you last cleared the feed ('' = never, or shown again)."""
+    with db.session() as conn:
+        return db.kv_get(conn, "feed_cleared_at") or ""
+
+
 def _where(f: dict) -> tuple[str, list]:
     """Feed and Discovery filters. Only calls still open: closed saved calls
     and applications are in the Archive (calendar, chat and the call's page
-    still show them)."""
+    still show them). After "Clear the feed", only what was found since, plus
+    what you saved or applied to (the chat still searches everything)."""
     where, params = report.filter_sql(f)
+    cleared = _cleared_at()
+    if cleared:
+        where += f" AND (o.first_seen > ? OR EXISTS {housekeeping.KEPT})"
+        params = [*params, cleared]
     return where + STILL_OPEN, params
 
 
@@ -176,11 +160,146 @@ def _feed_tabs(conn, where: str, params: list, since: str = "") -> list[dict]:
     return tabs
 
 
+TODAY_TOP = 3  # best new cards shown on Today
+
+
+# ---------------------------------------------------------------- profile (Home)
+#
+# The card at the top of Home: who Oppo searches for, read from the portfolio.
+# What the portfolio lacks (CV, portfolio, photo) can be uploaded there; it is
+# kept in data/profile/ (vs/portfolio.py: uploads), never in the portfolio.
+
+UPLOADS = {  # kind: (largest size, accepted file types, what the button says)
+    "cv": (20 << 20, ("pdf",), "CV"),
+    "portfolio": (60 << 20, ("pdf",), "portfolio"),
+    "portrait": (10 << 20, ("jpg", "png", "webp"), "photo"),
+}
+PROFILE_MESSAGES = {  # code: (text, is it an error)
+    "saved": ("Saved. Oppo uses it from now on.", False), "removed": ("Removed.", False),
+    "too-big": ("That file is too big.", True), "wrong-type": ("That isn't the right kind of file.", True),
+    "empty": ("Choose a file first.", True),
+}
+MISSING_WORDS = {"cv": "your CV", "portfolio": "your portfolio", "portrait": "a photo"}
+
+
+def _file_type(data: bytes) -> str:
+    if data.startswith(b"%PDF-"):
+        return "pdf"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    return ""
+
+
+def _profile_card(p, msg: str = "") -> dict:
+    """What the Home card shows: the person, their categories, and what is missing."""
+    text, error = PROFILE_MESSAGES.get(msg, ("", False))
+    if isinstance(p, Exception):
+        return {"ok": False, "name": "", "role": "", "cats": [], "has_cv": False, "portrait": "",
+                "missing": list(UPLOADS), "missing_text": _and([MISSING_WORDS[k] for k in UPLOADS]),
+                "uploaded": [], "msg": text, "msg_error": error}
+    per_cat = {}
+    for proj in p.projects:
+        for c in proj.categories:
+            per_cat[c] = per_cat.get(c, 0) + 1
+    cats = [{"label": p.category(c).label, "color": p.category(c).color, "n": n} for c, n in per_cat.items()]
+    missing = [k for k, lacking in (("cv", not p.has_cv), ("portfolio", not p.projects), ("portrait", p.portrait is None)) if lacking]
+    portrait = f"/profile/portrait?v={p.portrait.stat().st_mtime_ns}" if p.portrait else ""
+    return {"ok": True, "name": p.person.get("name") or "", "role": p.person.get("role") or "", "cats": cats,
+            "has_cv": p.has_cv, "portrait": portrait, "missing": missing,
+            "missing_text": _and([MISSING_WORDS[k] for k in missing]), "uploaded": list(p.uploaded),
+            "msg": text, "msg_error": error}
+
+
+def _and(words: list[str]) -> str:
+    return " and ".join(words) if len(words) < 3 else ", ".join(words[:-1]) + " and " + words[-1]
+
+
+@app.get("/profile/portrait")
+def profile_portrait():
+    p = _portfolio()
+    if isinstance(p, Exception) or p.portrait is None:
+        raise HTTPException(404)
+    return FileResponse(p.portrait, headers={"Cache-Control": "no-cache"})
+
+
+@app.post("/profile/upload")
+def profile_upload(kind: str = Form(""), file: UploadFile | None = File(None)):
+    """Keep an uploaded CV, portfolio PDF or photo in data/profile/ (checked
+    by its content, not its name)."""
+    if kind not in UPLOADS:
+        raise HTTPException(400)
+    limit, types, _ = UPLOADS[kind]
+    data = file.file.read(limit + 1) if file else b""
+    ftype = _file_type(data)
+    msg = "empty" if not data else "too-big" if len(data) > limit else "wrong-type" if ftype not in types else "saved"
+    if msg == "saved":
+        up = portfolio_mod.uploads_dir()
+        up.mkdir(parents=True, exist_ok=True)
+        name = f"portrait.{ftype}" if kind == "portrait" else portfolio_mod.UPLOAD_FILES[kind]
+        if kind == "portrait":
+            for old in up.glob("portrait.*"):
+                old.unlink()
+        tmp = up / (name + ".part")
+        tmp.write_bytes(data)
+        tmp.replace(up / name)
+    return RedirectResponse(f"/?profile={msg}#profile", 303)
+
+
+@app.post("/profile/remove")
+def profile_remove(kind: str = Form("")):
+    """Delete an uploaded file (only the app's copy; the portfolio is never touched)."""
+    up = portfolio_mod.uploads_dir()
+    if kind == "portrait":
+        for f in up.glob("portrait.*"):
+            f.unlink()
+    elif kind in portfolio_mod.UPLOAD_FILES:
+        (up / portfolio_mod.UPLOAD_FILES[kind]).unlink(missing_ok=True)
+    return RedirectResponse("/?profile=removed#profile", 303)
+
+
 @app.get("/", response_class=HTMLResponse)
-def home(request: Request):
-    """The chat: ask the app about its opportunities, sources, studios and
-    your portfolio (vs/chat.py)."""
-    return templates.TemplateResponse(request, "chat.html", ctx(request, view="chat", chat=None))
+def home(request: Request, profile: str = ""):
+    """Home: a green hero with the question box and examples, then what the
+    last refresh found, what closes this week and the next to-do steps (it
+    replaced the deadline and recap pop-ups)."""
+    with db.session() as conn:
+        expiry.expire(conn)
+        prev_visit = db.kv_get(conn, "last_visit") or ""
+        since = _last_batch(conn)
+        where, params = _where({})
+        tabs = [t for t in _feed_tabs(conn, where, params, since) if t["new"]] if since else []
+        # The best new one of each kind, in the feed's tab order: one tab with
+        # many new items (jobs) would otherwise fill all three places.
+        top = []
+        for t in tabs[:TODAY_TOP]:
+            gw, gp = _group_where(t["id"])
+            top += feed_rows(conn, where + gw + " AND COALESCE(m.bucket, 'feed') = 'feed' AND o.first_seen >= ?",
+                             tuple(params + gp + [since]), 1)
+        closing = todo.closing_soon(conn)
+        b = todo.board(conn, _briefing())
+        closing_ids = {o["id"] for o in closing}  # already listed above the steps
+        steps = [c for c in b["progress"] + b["todo"]
+                 if (c["kind"] == "call" or c["own"]) and c["oid"] not in closing_ids][:4]
+        recap = housekeeping.recap_due(conn)
+    _mark_visit()
+    return templates.TemplateResponse(request, "today.html", ctx(
+        request, view="home", profile=_profile_card(_portfolio(), profile), uploads=UPLOADS, tabs=tabs, top=top, since=since, closing=closing, steps=steps, recap=recap,
+        new_total=sum(t["new"] for t in tabs), new_since=prev_visit, month=date.today().strftime("%B")))
+
+
+@app.get("/ask", response_class=HTMLResponse)
+def ask_page(request: Request, q: str = ""):
+    """A new chat about opportunities, sources, studios and your portfolio
+    (vs/chat.py), asking ?q= at once (the box on Home). There is no empty
+    chat page: without a question you go back to Home."""
+    q = q.strip()[:500]
+    if not q:
+        return RedirectResponse("/", 303)
+    return templates.TemplateResponse(request, "chat.html", ctx(request, view="chat", chat=None, ask_now=q))
 
 
 @app.get("/chat/{cid}", response_class=HTMLResponse)
@@ -205,6 +324,20 @@ def chat_delete(request: Request, cid: int):
     with db.session() as conn:
         chatlog.delete(conn, cid)
     return RedirectResponse("/chats", 303)
+
+
+@app.post("/chat/warm")
+def chat_warm():
+    """The Ask page opened: load the chat model while the question is typed.
+    Not during a refresh, whose agents decide what is in video memory."""
+    if not pipeline.progress_state()["running"]:
+        def go():
+            try:
+                llm.warm()
+            except llm.LLMError:
+                pass
+        threading.Thread(target=go, daemon=True).start()
+    return Response(status_code=204)
 
 
 @app.post("/chat/ask", response_class=HTMLResponse)
@@ -339,13 +472,14 @@ def _todo_ctx(conn) -> dict:
 
 
 @app.get("/todo", response_class=HTMLResponse)
-def todo_page(request: Request, view: str = ""):
-    """The to-do board (it replaced the Applications page)."""
+def todo_page(request: Request, view: str = "", month: str = "", scope: str = "tracked"):
+    """The to-do: the month of deadlines, then the board (it replaced the
+    Applications and Calendar pages)."""
     with db.session() as conn:
         b = todo.board(conn, _briefing())
         extra = _todo_ctx(conn)
     return templates.TemplateResponse(request, "todo.html", ctx(
-        request, view="todo", board=b, deleted_view=view == "deleted", groups=todo.GROUPS,
+        request, view="todo", board=b, deleted_view=view == "deleted", groups=todo.GROUPS, cal=_calendar(month, scope),
         group_counts=todo.group_counts(b), **extra))
 
 
@@ -453,7 +587,17 @@ def feed(request: Request):
         request, rows=rows, new_rows=new_rows, live_rows=live_rows, live=live, only_new=only_new, since=since,
         total=total, older=bool(new_rows), loosen=loosen,
         f=f, opts=opts, view="feed", hidden_count=hidden_count, new_since=prev_visit,
-        qs=urlencode(f), tabs=tabs, tab=tab, offset=0, next_offset=len(rows), prev_far=False))
+        qs=urlencode(f), tabs=tabs, tab=tab, offset=0, next_offset=len(rows), prev_far=False, cleared=_cleared_at()))
+
+
+@app.post("/feed/clear")
+def feed_clear(request: Request, undo: int = Form(0)):
+    """Clear the feed: what is in it now leaves the Feed, Discovery and Ask's
+    overview, and only what later refreshes find comes in. Saved calls and
+    applications stay. Nothing is deleted: undo=1 shows everything again."""
+    with db.session() as conn:
+        db.kv_set(conn, "feed_cleared_at", "" if undo else db.now())
+    return RedirectResponse(_back(request, "/feed"), 303)
 
 
 FILTER_NAMES = {"q": "your search", "region": "the region filter", "within": "the deadline filter", "elig": "the eligibility filter",
@@ -594,7 +738,7 @@ def studios_page(request: Request, country: str = "", kind: str = ""):
         groups.setdefault(s.get("country", "?"), []).append(s)
     return templates.TemplateResponse(request, "studios.html", ctx(
         request, groups=groups, countries=countries, kinds=kinds, sel_country=country, sel_kind=kind,
-        statuses=studios_mod.STATUSES, total=len(items), view="studios"))
+        statuses=studios_mod.STATUSES, total=len(items), view="taste"))
 
 
 @app.post("/studios/status")
@@ -618,27 +762,32 @@ def hidden(request: Request):
     return templates.TemplateResponse(request, "hidden.html", ctx(request, groups=groups, total=len(rows), view="feed"))
 
 
-@app.get("/calendar", response_class=HTMLResponse)
-def calendar_view(request: Request, month: str = "", scope: str = "tracked"):
+def _calendar(month: str = "", scope: str = "tracked") -> dict:
+    """The month of deadlines shown at the top of the To-do."""
     today = date.today()
-    y, m = (int(x) for x in month.split("-")) if month else (today.year, today.month)
-    first = date(y, m, 1)
+    try:
+        y, m = (int(x) for x in month.split("-")) if month else (today.year, today.month)
+        first = date(y, m, 1)
+    except ValueError:
+        y, m, first = today.year, today.month, today.replace(day=1)
     last = date(y, m, cal_mod.monthrange(y, m)[1])
     extra = "" if scope == "all" else "AND (u.favourite = 1 OR u.app_status IS NOT NULL)"
     with db.session() as conn:
         rows = feed_rows(conn, f"AND o.deadline BETWEEN ? AND ? {extra} AND COALESCE(u.dismissed,0)=0",
                          (first.isoformat(), last.isoformat()), 400)
-        agenda = feed_rows(conn, f"AND o.deadline >= date('now') {extra} AND COALESCE(u.dismissed,0)=0", (), 400)
-    agenda.sort(key=lambda r: r["deadline"])
     by_day: dict[str, list] = {}
     for r in rows:
         by_day.setdefault(r["deadline"], []).append(r)
-    weeks = cal_mod.Calendar(firstweekday=0).monthdatescalendar(y, m)
-    prev_m = (first - timedelta(days=1)).strftime("%Y-%m")
-    next_m = (last + timedelta(days=1)).strftime("%Y-%m")
-    return templates.TemplateResponse(request, "calendar.html", ctx(request, weeks=weeks, by_day=by_day, month=first, today=today,
-                                                           prev_m=prev_m, next_m=next_m, scope=scope, agenda=agenda,
-                                                           view="calendar"))
+    return {"weeks": cal_mod.Calendar(firstweekday=0).monthdatescalendar(y, m), "by_day": by_day, "month": first,
+            "today": today, "scope": "all" if scope == "all" else "tracked",
+            "prev_m": (first - timedelta(days=1)).strftime("%Y-%m"), "next_m": (last + timedelta(days=1)).strftime("%Y-%m")}
+
+
+@app.get("/calendar")
+def calendar_view(request: Request):
+    """The calendar lives at the top of the To-do now."""
+    q = urlencode({k: v for k, v in request.query_params.items() if k in ("month", "scope")})
+    return RedirectResponse(f"/todo{'?' + q if q else ''}#calendar", 301)
 
 
 @app.get("/calendar.ics")
@@ -711,7 +860,7 @@ def sources(request: Request):
         models, llm_error = [], str(e)
     size = db.DB_PATH.stat().st_size if db.DB_PATH.exists() else 0
     return templates.TemplateResponse(request, "sources.html", ctx(request, configured=configured, states=states, runs=runs,
-                                                          counts=counts, view="sources", models=models, llm_error=llm_error,
+                                                          counts=counts, view="taste", models=models, llm_error=llm_error,
                                                           stats=stats, suggest=suggest, cleanup=cleanup, db_mb=round(size / 1e6)))
 
 
@@ -784,7 +933,7 @@ def run_detail(request: Request, rid: int):
     report = Path(run["report_path"]).read_text(encoding="utf-8") if run.get("report_path") and Path(run["report_path"]).exists() else ""
     import markdown as md
     return templates.TemplateResponse(request, "run.html", ctx(request, run=run, report_html=md.markdown(report, extensions=["tables"]),
-                                                      view="sources"))
+                                                      view="taste"))
 
 
 @app.get("/files")
@@ -913,9 +1062,9 @@ def stop_agent(request: Request, name: str):
     return HTMLResponse("")
 
 
-RESTARTING_PAGE = """<!doctype html><meta charset="utf-8"><title>Restarting</title>
-<body style="font:15px system-ui;padding:40px;background:#f7f7f4;color:#1d1d1b">
-<p>Restarting the app&hellip; this page reloads by itself.</p>
+RESTARTING_PAGE = """<!doctype html><meta charset="utf-8"><title>Oppo is restarting</title>
+<body style="font:15px system-ui;padding:40px;background:#F5F6F1;color:#17201B">
+<p>Oppo is restarting&hellip; this page reloads by itself.</p>
 <script>
 setTimeout(function poll() {
   fetch("/progress", {cache: "no-store"}).then(r => r.ok ? location.replace("/") : setTimeout(poll, 1000))
@@ -939,9 +1088,31 @@ def rescore(request: Request):
     return RedirectResponse(_back(request, "/"), 303)
 
 
+@app.get("/favicon.svg")
+def favicon():
+    """Oppo as the tab icon: static/oppo/favicon.svg, else its default drawing."""
+    return Response(svg_source("favicon"), media_type="image/svg+xml", headers={"Cache-Control": "no-cache"})
+
+
 @app.get("/progress", response_class=HTMLResponse)
 def progress(request: Request):
-    return templates.TemplateResponse(request, "_progress.html", {"request": request, "progress": pipeline.progress_state()})
+    return templates.TemplateResponse(request, "_progress.html", {"request": request, "progress": pipeline.progress_state(),
+                                                                  "interrupted": _interrupted_run()})
+
+
+APP_STARTED = db.now()
+
+
+def _interrupted_run() -> dict | None:
+    """A refresh this app didn't start that is still marked running: the app
+    was closed or restarted during it (the next refresh marks it interrupted
+    and continues). Shown instead of 'Finished', which would not be true."""
+    st = pipeline.progress_state()
+    if st["running"] or st["lines"]:
+        return None
+    with db.session() as conn:
+        row = conn.execute("SELECT id, started FROM run WHERE status = 'running' ORDER BY id DESC LIMIT 1").fetchone()
+    return dict(row) if row and (row["started"] or "") < APP_STARTED else None
 
 
 @app.post("/examples")

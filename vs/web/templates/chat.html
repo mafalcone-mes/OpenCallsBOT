@@ -1,18 +1,17 @@
 {% extends "base.html" %}
 {% block title %}{{ chat.title if chat else 'Ask' }}{% endblock %}
 {% block main %}
-{# As in AI chat apps: an empty page with the box in the middle; at the first
-   question the box slides to the bottom and the conversation takes the space. #}
-<div class="ask" id="ask" data-state="{{ 'chat' if chat else 'empty' }}">
-  <div class="ask-hero">
-    <h1>What are you looking for?</h1>
-    <p class="muted">Opportunities, your saved ones, sources, studios or your projects. Every answer comes from the app's own data.</p>
-  </div>
+{# One conversation, as in AI chat apps: the turns fill the page and the box
+   stays at the bottom. A new chat starts from the box on Home (/ask?q=). #}
+<div class="ask" id="ask">
+  <h1 class="sr-only">{{ chat.title if chat else ask_now }}</h1>
 
   <div class="chat" id="thread">
     {% if chat %}{% for t in chat.turns %}<div class="chat-turn"><p class="chat-q">{{ t.q }}</p>{{ t.html | safe }}</div>{% endfor %}{% endif %}
   </div>
   <p class="sr-only" id="chat-status" role="status" aria-live="polite"></p>
+  {# loads the model while the question is typed, so the first answer doesn't wait for it #}
+  <div hidden hx-post="/chat/warm" hx-trigger="load" hx-swap="none"></div>
 
   <form class="ask-box" id="chat-form" hx-post="/chat/ask" hx-target="#chat-pending" hx-swap="outerHTML">
     <label for="chat-q" class="sr-only">Your question</label>
@@ -25,18 +24,10 @@
     </button>
   </form>
   <p class="ask-hint small muted">Enter to ask · Shift + Enter for a new line</p>
-
-  <div class="ask-suggest">
-    {% for ex in ["residencies in Italy that close this month", "open calls with the word “paesaggio”", "lavori in Olanda per graphic designer",
-                  "what's close to my projects about photography", "my saved ones", "which sources look at museums?",
-                  "studios in Berlin", "workshops and courses in the next 30 days"] %}
-    <button class="btn" type="button" onclick="ask(this.textContent)">{{ ex }}</button>
-    {% endfor %}
-  </div>
 </div>
 
 <script>
-  const askEl = document.getElementById("ask"), form = document.getElementById("chat-form"),
+  const form = document.getElementById("chat-form"),
         box = document.getElementById("chat-q"), send = form.querySelector(".ask-send"), thread = document.getElementById("thread");
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -47,22 +38,10 @@
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); if (box.value.trim()) htmx.trigger(form, "submit"); }
   });
 
-  // First question: the box slides from the middle to the bottom (measured
-  // before and after the layout changes, then animated between the two).
-  function toChat() {
-    if (askEl.dataset.state === "chat") return;
-    const before = form.getBoundingClientRect().top;
-    askEl.dataset.state = "chat";
-    const after = form.getBoundingClientRect().top;
-    if (!reduced) form.animate([{ transform: `translateY(${before - after}px)` }, { transform: "none" }],
-                               { duration: 480, easing: "cubic-bezier(.2, .8, .2, 1)" });
-  }
-
   // Before htmx sends: show the question at once and a "searching" placeholder
   // that the answer will replace (runs first: capture phase on the document).
   document.addEventListener("submit", e => {
     if (e.target !== form || !box.value.trim()) return;
-    toChat();
     document.getElementById("chat-pending")?.removeAttribute("id");
     const turn = document.createElement("div");
     turn.className = "chat-turn";
@@ -91,7 +70,17 @@
   // Example and "try …" buttons ask a question (or run a ready plan) through the same box.
   function ask(text, plan) { box.value = text; form.plan.value = plan || ""; fit(); htmx.trigger(form, "submit"); }
   // A saved chat opens at its last answer, ready for the next question.
-  if (askEl.dataset.state === "chat") thread.lastElementChild?.scrollIntoView({ block: "start" });
+  thread.lastElementChild?.scrollIntoView({ block: "start" });
   box.focus();
+  {% if ask_now %}// Asked from the box on Home. Only once htmx has wired the form (it loads
+  // deferred and sets up the page after it is parsed): asked earlier, the
+  // question shows but is never sent.
+  let askedNow = false;
+  document.body.addEventListener("htmx:load", e => {
+    if (askedNow || e.target !== document.body) return;
+    askedNow = true;
+    ask({{ ask_now | tojson }});
+  });
+  {% endif %}
 </script>
 {% endblock %}

@@ -6,6 +6,12 @@ learns their taste from their stars and examples, and prepares application
 briefs. Each person runs their own copy with their own preferences; the list
 of sources is shared through a Google Sheet.
 
+The app's identity is **Oppo**, a little robot that looks for opportunities.
+Colors are tokens at the top of `vs/web/static/app.css` (radar green
+`--oppo` for fills, darker `--accent` for text). Oppo's drawings are SVGs in
+`vs/web/static/oppo/` (poses and rules in its README), inlined by
+`vs/web/oppo.py`; the owner draws them, so never invent the robot.
+
 ## Knowledge base: the person's portfolio
 
 The profile and projects the app works from live **outside** this app, in the
@@ -33,6 +39,10 @@ Rules:
 - Categories are data-driven. Never assume a fixed set; a new category must
   work with no code changes.
 - The app only **reads** the portfolio. It never writes to it.
+- What the portfolio lacks (CV, portfolio PDF, photo) can be uploaded in the
+  profile card on Home. Uploads go to `data/profile/` (personal), never into
+  the portfolio, and the loader uses them only where the portfolio has
+  nothing: the portfolio always wins.
 
 ## Sources: the shared Google Sheet
 

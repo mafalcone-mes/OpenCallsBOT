@@ -118,13 +118,32 @@ def describe_stats(purpose: str, s: dict) -> str:
             f"loading {s['load_s']:.0f} s in total)")
 
 
+CHAT_KEEP_ALIVE = "5m"
+
+
+def _num_ctx() -> int:
+    return int(_cfg().get("num_ctx", 8192))
+
+
+def warm(model: str | None = None) -> None:
+    """Load the chat model into memory now, without asking it anything, so the
+    next question doesn't wait for it (~8 s on 8 GB VRAM). Same context size and
+    keep-alive as chat_json: with another num_ctx Ollama would load it again."""
+    model = model or chat_model()
+    try:
+        httpx.post(f"{host()}/api/generate", json={"model": model, "keep_alive": CHAT_KEEP_ALIVE,
+                                                   "options": {"num_ctx": _num_ctx()}}, timeout=120)
+    except httpx.HTTPError:
+        pass  # the question itself will load it, or say Ollama is down
+
+
 def chat_json(system: str, user: str, schema: dict, *, model: str | None = None,
               think: bool = False, temperature: float = 0.0, retries: int = 1,
               max_tokens: int | None = None, purpose: str = "chat", seed: int | None = None) -> dict:
     """One chat call constrained to `schema`. Retries once on invalid JSON.
     `max_tokens` caps the answer, so a model that rambles can't take minutes."""
     model = model or chat_model()
-    options = {"temperature": temperature, "num_ctx": int(_cfg().get("num_ctx", 8192))}
+    options = {"temperature": temperature, "num_ctx": _num_ctx()}
     if max_tokens:
         options["num_predict"] = max_tokens
     if seed is not None:
@@ -135,7 +154,7 @@ def chat_json(system: str, user: str, schema: dict, *, model: str | None = None,
         "format": schema,
         "stream": False,
         "think": think,
-        "keep_alive": "5m",
+        "keep_alive": CHAT_KEEP_ALIVE,
         "options": options,
     }
     last_err: Exception | None = None

@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block title %}Home{% endblock %}
+{% block main %}
+{# Home: a full-width green hero with the question box (a question opens a
+   chat with it), then what's new, what closes and what to do next; the top
+   of those shows at the bottom of the first screen. It replaced the
+   once-a-day deadline pop-up and the recap pop-up. #}
+<div class="home">
+<section class="hero" aria-labelledby="hero-h">
+  <div class="hero-in">
+    {{ oppo(size=96) }}
+    <h1 id="hero-h">What are you looking for?</h1>
+    <p class="hero-hint">Opportunities, your saved ones, sources, studios or your projects.</p>
+    <form class="ask-box hero-ask" action="/ask" method="get" role="search">
+      <label for="q" class="sr-only">Ask Oppo</label>
+      <textarea id="q" name="q" rows="1" required autocomplete="off" placeholder="Ask anything…"></textarea>
+      <button class="ask-send" type="submit" aria-label="Ask" disabled>{{ icon('arrow-up', 20) }}</button>
+    </form>
+    <ul class="hero-examples" aria-label="Examples">
+      {% for ex in ["residencies in Italy that close this month", "open calls with the word “paesaggio”", "lavori in Olanda per graphic designer",
+                    "what's close to my projects about photography", "my saved ones", "which sources look at museums?",
+                    "studios in Berlin", "workshops and courses in the next 30 days"] %}
+      <li><a class="btn" href="/ask?{{ {'q': ex} | urlencode }}">{{ ex }}</a></li>
+      {% endfor %}
+    </ul>
+  </div>
+  {# loads the model while the question is typed, so the first answer doesn't wait for it #}
+  <div hidden hx-post="/chat/warm" hx-trigger="load" hx-swap="none"></div>
+</section>
+
+<div class="today home-body">
+  {# Who Oppo searches for, read from the portfolio; what it lacks can be uploaded here (kept in data/profile/). #}
+  <section class="profile" id="profile" aria-labelledby="profile-h">
+    <div class="profile-id">
+      {% if profile.portrait %}<img class="profile-photo" src="{{ profile.portrait }}" alt="" width="72" height="72">
+      {% else %}<span class="profile-photo none" aria-hidden="true">{{ oppo(size=40) }}</span>{% endif %}
+      <div class="profile-text">
+        <h2 id="profile-h">{{ profile.name or 'Your profile' }}</h2>
+        {% if profile.role %}<p class="muted">{{ profile.role }}</p>
+        {% elif not profile.ok %}<p class="muted">Oppo can't read a portfolio yet. Upload your CV and portfolio below.</p>{% endif %}
+      </div>
+      {% if profile.has_cv %}<span class="chip profile-cv">{{ icon('check', 14) }} CV</span>{% endif %}
+    </div>
+    {% if profile.cats %}
+    <ul class="profile-cats" aria-label="Portfolio categories">
+      {% for c in profile.cats %}<li class="chip proj" style="--c: {{ c.color }}">{{ c.label }} <span class="muted">{{ c.n }}</span></li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if profile.missing %}
+    <div class="profile-add">
+      <p class="small muted">Add {{ profile.missing_text }}: Oppo matches and prepares applications better with them.
+        Files you add here stay in this app; your portfolio isn't changed.</p>
+      <div class="profile-forms">
+        {% for k in profile.missing %}{% set limit, types, label = uploads[k] %}
+        <form method="post" action="/profile/upload" enctype="multipart/form-data">
+          <input type="hidden" name="kind" value="{{ k }}">
+          <label class="btn upload">{{ icon('upload', 16) }} Add {{ label }}
+            <input class="sr-only" type="file" name="file" required
+                   accept="{{ '.pdf,application/pdf' if 'pdf' in types else 'image/jpeg,image/png,image/webp' }}" onchange="this.form.submit()"></label>
+        </form>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+    {% if profile.uploaded %}
+    <div class="profile-uploaded small muted">Added here:
+      {% for k in profile.uploaded %}<form method="post" action="/profile/remove">
+        <input type="hidden" name="kind" value="{{ k }}">{{ uploads[k][2] }}
+        <button class="btn ghost" aria-label="Remove the {{ uploads[k][2] }} you added">Remove</button></form>{% endfor %}
+    </div>
+    {% endif %}
+    {% if profile.msg %}<p class="small profile-msg {{ 'error' if profile.msg_error }}" role="status">{{ profile.msg }}</p>{% endif %}
+  </section>
+
+  <div class="today-grid">
+    <section class="today-new" aria-labelledby="new-h">
+      <div class="today-h">
+        <h2 id="new-h">New from the last refresh{% if new_total %} <span class="count">{{ new_total }}</span>{% endif %}</h2>
+        {% if since %}<span class="small muted">{{ present.run_label(since) }}</span>{% endif %}
+      </div>
+      {% if tabs %}
+      <nav class="today-tabs" aria-label="New by kind">
+        {% for t in tabs %}<a class="btn" href="/feed?g={{ t.id }}&new=1">{{ t.label }} <span class="g-new">+{{ t.new }}</span></a>{% endfor %}
+      </nav>
+      <h3 class="small muted today-sub">The best new one of each kind</h3>
+      <div class="cards list">{% for o in top %}{% include "_card.html" %}{% endfor %}</div>
+      <p><a class="btn ghost" href="/feed?new=1">All {{ new_total }} new in the feed {{ icon('arrow-right', 14) }}</a></p>
+      {% else %}
+      <div class="today-empty">
+        <p>Nothing new since the last refresh.</p>
+        {% if not progress.running %}<form method="post" action="/refresh"><button class="btn primary">{{ icon('refresh-cw') }} Search my sources</button></form>{% endif %}
+        <a class="btn ghost" href="/feed">Open the feed</a>
+      </div>
+      {% endif %}
+    </section>
+
+    <div class="today-side">
+      <section class="box" aria-labelledby="closing-h">
+        <h2 id="closing-h" class="with-icon">{{ icon('clock', 18) }} Closing this week</h2>
+        {% if closing %}
+        <ul class="today-list">
+          {% for o in closing %}{% set dl_main, dl_when = present.deadline_parts(o.deadline, o.deadline_kind) %}
+          <li><a href="/o/{{ o.id }}">{{ o.title_en or o.title_original }}</a>
+            <span class="small soon">{{ dl_main }}{% if dl_when %} · {{ dl_when }}{% endif %}</span></li>
+          {% endfor %}
+        </ul>
+        {% else %}<p class="small muted">None of your saved calls closes in the next 7 days.</p>{% endif %}
+      </section>
+
+      <section class="box" aria-labelledby="steps-h">
+        <h2 id="steps-h" class="with-icon">{{ icon('list-todo', 18) }} Next steps</h2>
+        {% if steps %}
+        <ul class="today-list">
+          {% for c in steps %}
+          <li><a href="{{ c.href or '/todo' }}">{{ c.title }}</a>
+            {% if c.sub %}<span class="small muted">{{ c.sub }}</span>{% endif %}</li>
+          {% endfor %}
+        </ul>
+        <p><a class="btn ghost" href="/todo">Open the to-do {{ icon('arrow-right', 14) }}</a></p>
+        {% else %}<p class="small muted">Save a call and its next step appears here.</p>{% endif %}
+      </section>
+
+      {% if recap %}
+      <section class="box today-recap" aria-labelledby="recap-h">
+        <h2 id="recap-h" class="with-icon">{{ icon('calendar', 18) }} Recap for {{ month }}</h2>
+        <p class="small muted">Set how your applications went and decide about saved calls that closed. A couple of minutes.</p>
+        <p><a class="btn" href="/recap">Open the recap</a></p>
+      </section>
+      {% endif %}
+    </div>
+  </div>
+</div>
+</div>
+<script>
+  // Enter asks (Shift + Enter for a new line), as in the chat; the box grows with the text.
+  const tq = document.getElementById("q"), tsend = tq.form.querySelector(".ask-send");
+  function tfit() { tq.style.height = "auto"; tq.style.height = Math.min(tq.scrollHeight, 200) + "px"; tsend.disabled = !tq.value.trim(); }
+  tq.addEventListener("input", tfit);
+  tq.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); if (tq.value.trim()) tq.form.submit(); } });
+  // "New question" in the side bar (/#q): straight into the box.
+  function tfocus() { if (location.hash === "#q") { tq.focus(); tq.scrollIntoView({ block: "center" }); } }
+  addEventListener("hashchange", tfocus); tfocus(); tfit();
+  document.querySelector(".sb-new")?.addEventListener("click", e => {  // already on Home: no reload
+    e.preventDefault(); history.replaceState(null, "", "/#q");
+    if (document.body.classList.contains("sb-open")) toggleSidebar(false);
+    tfocus();
+  });
+</script>
+{% endblock %}

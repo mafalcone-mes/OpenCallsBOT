@@ -1,5 +1,7 @@
 <div class="progress">
-  {% if progress.running %}<strong>Working…</strong>{% else %}<strong>Finished</strong> · <a href="/feed">reload the feed</a>{% endif %}
+  <p class="progress-head">{% if progress.running %}{{ oppo('searching', 32) }} <strong>Oppo is looking…</strong>
+    {% elif interrupted %}<strong>The refresh of {{ present.run_label(interrupted.started) }} was interrupted</strong> · the app closed or restarted during it. What it read is kept: refresh again to continue.
+    {% else %}{{ oppo('found', 32) }} <strong>Finished</strong> · <a href="/feed">reload the feed</a>{% endif %}</p>
   {% if progress.agents %}
   <table class="agents">
     <thead class="sr-only"><tr><th>Agent</th><th>Status</th><th>Working on</th><th>Progress</th><th>Action</th></tr></thead>

@@ -21,7 +21,7 @@ import io
 import json
 import re
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from pathlib import Path
 
@@ -85,6 +85,9 @@ class Portfolio:
     profile_hash: str
     media_hash: str
     warnings: list[str]
+    cv_path: Path | None = None
+    portrait: Path | None = None  # the person's photo, if the portfolio (or an upload) has one
+    uploaded: tuple[str, ...] = ()  # what came from data/profile/ instead of the portfolio
 
     def category(self, cid: str) -> Category:
         for c in self.categories:
@@ -207,6 +210,82 @@ def current_hash(root: Path | None = None, fmt: str | None = None) -> str:
 
 
 def load(root: Path | None = None, fmt: str | None = None) -> Portfolio:
+    """The portfolio, plus what the person uploaded on Home for the parts it
+    lacks (see uploads_dir). With no readable portfolio at all, the uploaded
+    PDFs alone stand in for it."""
+    up = uploads_dir()
+    try:
+        p = _load_source(root, fmt)
+    except PortfolioError:
+        if not _pdf_files(up):
+            raise
+        p = _load_pdf(str(up), _hash_files(up, _pdf_files(up)))
+        p = replace(p, portrait=uploaded_portrait(up),
+                    uploaded=tuple(k for k, f in UPLOAD_FILES.items() if (up / f).exists())
+                    + (("portrait",) if uploaded_portrait(up) else ()))
+        return p
+    return _with_uploads(p, up)
+
+
+# ---------------------------------------------------------------- uploads
+#
+# Someone without a CV, a photo or a portfolio in their portfolio folder can
+# upload them on Home. They are kept in the app's own data folder (personal,
+# never committed), never written into the portfolio, and used only for the
+# parts the portfolio lacks: the portfolio always wins.
+
+UPLOAD_FILES = {"cv": "cv.pdf", "portfolio": "portfolio.pdf"}  # the photo is portrait.<jpg|png|webp>
+
+
+def uploads_dir() -> Path:
+    from vs import config
+    return config.DATA_DIR / "profile"
+
+
+def uploaded_portrait(up: Path | None = None) -> Path | None:
+    up = up or uploads_dir()
+    return next((up / f"portrait{e}" for e in (".jpg", ".png", ".webp") if (up / f"portrait{e}").exists()), None)
+
+
+def _uploads_key(up: Path) -> str:
+    files = _pdf_files(up) + ([uploaded_portrait(up)] if uploaded_portrait(up) else [])
+    return "|".join(f"{f.name}:{f.stat().st_size}:{f.stat().st_mtime_ns}" for f in files)
+
+
+_merged: dict[tuple, Portfolio] = {}
+
+
+def _with_uploads(p: Portfolio, up: Path) -> Portfolio:
+    key = (str(p.root), p.profile_hash, _uploads_key(up))
+    if key in _merged:
+        return _merged[key]
+    changes: dict = {}
+    used: list[str] = []
+    cv = up / UPLOAD_FILES["cv"]
+    if not p.has_cv and cv.exists():
+        changes.update(has_cv=True, cv_path=cv, cv_text=_pdf_text(cv),
+                       warnings=[w for w in p.warnings if "cv.pdf" not in w])
+        used.append("cv")
+    if not p.projects and (up / UPLOAD_FILES["portfolio"]).exists():
+        # a portfolio without projects: match on the uploaded PDF's pages
+        pdf = _load_pdf(str(up), _hash_files(up, [up / UPLOAD_FILES["portfolio"]]))
+        changes.update(projects=pdf.projects, angles=pdf.angles, categories=pdf.categories)
+        used.append("portfolio")
+    if p.portrait is None and (pic := uploaded_portrait(up)):
+        changes["portrait"] = pic
+        used.append("portrait")
+    if changes:
+        # anything derived from the profile (summaries, vectors) is redone
+        changes["profile_hash"] = hashlib.sha256(f"{p.profile_hash}|{key[2]}".encode()).hexdigest()
+        changes["uploaded"] = tuple(used)
+        p = replace(p, **changes)
+    if len(_merged) > 8:
+        _merged.clear()
+    _merged[key] = p
+    return p
+
+
+def _load_source(root: Path | None = None, fmt: str | None = None) -> Portfolio:
     root = root or portfolio_dir()
     fmt = fmt or portfolio_format()
     if fmt == "folder":
@@ -310,7 +389,20 @@ def _load_cached(root_str: str, profile_hash: str) -> Portfolio:
         angles=angles, has_cv=cv.exists(), cv_text=cv_text,
         css_tokens=_css_tokens(root / "app" / "globals.css"),
         profile_hash=profile_hash, media_hash=media.hexdigest(), warnings=warnings,
+        cv_path=cv if cv.exists() else None,
+        portrait=_inside(root / "public", str(person.get("portrait") or "").lstrip("/")),
     )
+
+
+def _inside(base: Path, rel: str) -> Path | None:
+    """`base/rel` if it is an image file that stays inside `base` (a path
+    written in the portfolio can't point anywhere else on the disk)."""
+    if not rel:
+        return None
+    path = (base / rel).resolve()
+    if path.suffix.lower() in IMAGE_EXTENSIONS and path.is_file() and path.is_relative_to(base.resolve()):
+        return path
+    return None
 
 
 # ---------------------------------------------------------------- folder format
@@ -381,9 +473,12 @@ def _load_folder(root_str: str, profile_hash: str) -> Portfolio:
     cv_text = _pdf_text(cv) if cv.exists() else ""
     if not cv.exists():
         warnings.append("No cv.pdf in the portfolio folder: briefs will list the CV as missing")
+    portrait = _inside(root, str(meta.get("portrait") or "")) or next(
+        (root / f"portrait{e}" for e in sorted(IMAGE_EXTENSIONS) if (root / f"portrait{e}").is_file()), None)
     return Portfolio(root=root, person=person, categories=categories, projects=projects, angles=angles,
                      has_cv=cv.exists(), cv_text=cv_text, css_tokens={}, profile_hash=profile_hash,
-                     media_hash=profile_hash, warnings=warnings)
+                     media_hash=profile_hash, warnings=warnings, cv_path=cv if cv.exists() else None,
+                     portrait=portrait)
 
 
 # ---------------------------------------------------------------- pdf format
@@ -435,4 +530,5 @@ def _load_pdf(root_str: str, profile_hash: str) -> Portfolio:
     person = {"name": first_line, "role": "", "description": "", "bio": [cv_text[:1500]] if cv_text else [], "contacts": {}}
     return Portfolio(root=root, person=person, categories=[Category("portfolio", "Portfolio", "#8c8b8a")],
                      projects=projects, angles=angles, has_cv=cv.exists(), cv_text=cv_text, css_tokens={},
-                     profile_hash=profile_hash, media_hash=profile_hash, warnings=warnings)
+                     profile_hash=profile_hash, media_hash=profile_hash, warnings=warnings,
+                     cv_path=cv if cv.exists() else None)
