@@ -192,9 +192,16 @@ def context(conn, portfolio: Portfolio) -> dict:
 def prepare(ctx: dict, o: dict, v: np.ndarray) -> dict:
     """The parts of one opportunity's score that need no model call."""
     w, sig_w, sig_mat, sig_meta = ctx["w"], ctx["sig_w"], ctx["sig_mat"], ctx["sig_meta"]
-    # Portfolio similarity: mean of the top-2 angles.
+    # Portfolio similarity: mean of the top-2 angles. A source for one field
+    # (e.g. photography) is compared only with the projects in that field.
     a_sims = _cos(ctx["a_mat"], v)
-    top = np.sort(a_sims)[::-1]
+    fields = ctx["portfolio"].categories_for(ctx["sources"].get(o.get("source_id") or "", {}).get("field_tags") or [])
+    if fields and a_sims.size:
+        ids = {c.id for c in fields}
+        in_field = np.array([k.rsplit(":", 1)[-1] in ids for k in ctx["a_keys"]])
+        if in_field.any():
+            a_sims = np.where(in_field, a_sims, -1.0)
+    top = np.sort(a_sims[a_sims > -1.0])[::-1]
     P = float(top[:2].mean()) if top.size else 0.0
     T, similar, near_pos, near_neg = 0.0, [], [], []
     if len(sig_w):
@@ -225,12 +232,12 @@ def prepare(ctx: dict, o: dict, v: np.ndarray) -> dict:
     region = "remote" if o.get("remote_mode") in ("remote", "online") else (o.get("region") or "unknown")
     R = float(regions.get(region, regions.get("unknown", 0.0)))
     # nearest angles for suggestions
-    best = [ctx["a_keys"][i] for i in np.argsort(a_sims)[::-1][:3]] if a_sims.size else []
+    best = [ctx["a_keys"][i] for i in np.argsort(a_sims)[::-1][:3] if a_sims[i] > -1.0] if a_sims.size else []
     flag, notes = eligibility_check(o, ctx["me"])
     # The score says how close it is to you, on fixed scales: it never depends
     # on what else was found. Source and region only break ties.
     Pn, Tn = scaled(P, w, "portfolio_range"), scaled(T, w, "taste_range")
-    return {"o": o, "P": P, "T": T, "K": K, "S": S, "R": R, "Pn": Pn, "Tn": Tn, "hits": hits, "similar": similar,
+    return {"o": o, "fields": [c.label for c in fields], "P": P, "T": T, "K": K, "S": S, "R": R, "Pn": Pn, "Tn": Tn, "hits": hits, "similar": similar,
             "near_pos": near_pos, "near_neg": near_neg, "best_angles": best, "flag": flag, "notes": notes,
             "prelim": absolute_score(Pn, Tn, None, K, ctx["parts"]),
             "tiebreak": float(w.get("source", 0.2)) * S + R}
@@ -309,10 +316,13 @@ def score_one(conn, ctx: dict, opp_id: int, *, rerank: bool = True, progress=lam
 
 
 def score_all(conn, portfolio: Portfolio, *, rerank: bool = True, progress=lambda msg: None,
-              stale_limit: int | None = None) -> dict:
+              stale_limit: int | None = None, should_stop=lambda: False) -> dict:
     """`stale_limit`: at most this many explanations that only went out of date
     (e.g. after a new star) are redone; the others keep their old text until a
-    later run. New matches are always explained. None = redo all of them."""
+    later run. New matches are always explained. None = redo all of them.
+    `should_stop`: once it says yes (you pressed Stop), no new explanation is
+    written: every score is still saved, old explanations stay, and the
+    missing ones are written at the next run."""
     opps = [db.row_dict(r) for r in conn.execute(
         "SELECT * FROM opportunity WHERE status='open' AND extraction_status='done'")]
     if not opps:
@@ -341,6 +351,11 @@ def score_all(conn, portfolio: Portfolio, *, rerank: bool = True, progress=lambd
         key = rerank_key(user, schema)
         llm_out = None
         explained = bool(prev) and prev.get("llm_fit") is not None
+        if rerank and should_stop():
+            rerank = False
+            progress("Stopped: no more explanations this time; every score is saved")
+        if not rerank and explained:
+            key = prev["rerank_key"]  # keep the old explanation as it is
         stale = explained and prev.get("rerank_key") != key and rerank and o["dedup_key"] in to_rerank
         if stale and stale_left is not None:
             if stale_left > 0:
@@ -429,6 +444,10 @@ def rerank_prompt(portfolio: Portfolio, o: dict, r: dict, sig_meta: list[dict], 
                  else "LIKED" if s["w"] > 0 else "DISLIKED")
         refs.append(f"- id={s['ref']} ({label}{', why: ' + s['why'] if s.get('why') else ''}): {s.get('title', '')}")
     statements = taste.get("statements") or []
+    fields = " / ".join(r.get("fields") or [])
+    field_note = (f"\nTHIS COMES FROM A SOURCE FOR {fields.upper()}: judge their fit as someone who works in {fields}, "
+                  f"against their {fields} projects below. Their keywords and stars in other fields do not count against it.\n"
+                  ) if fields else ""
     starred = [s.get("title", "") for s in sig_meta if s.get("label") == "favourite" and s.get("title")][:15]
     user = f"""PROFILE
 {portfolio.person.get('name')}: {portfolio.person.get('role')}. {' '.join(portfolio.person.get('bio') or [])}
@@ -444,6 +463,7 @@ THEIR PROJECTS, FOR CONTEXT (id in brackets; all ids: {', '.join(angle_keys)})
 EXAMPLES AND SIGNALS FROM THEM
 {chr(10).join(refs[:6]) if refs else '(none yet)'}
 
+{field_note}
 OPPORTUNITY
 Title: {o.get('title_en') or o.get('title_original')}
 Organisation: {o.get('org_name')}

@@ -96,6 +96,22 @@ class Portfolio:
         # Unknown ids are still data: show them with a neutral colour.
         return Category(cid, cid.replace("-", " ").title(), "#8c8b8a")
 
+    def categories_for(self, tags: list[str]) -> list[Category]:
+        """The person's categories a source's field tags name (by id or label,
+        ignoring case and punctuation; a tag may be the start of one, e.g.
+        `photo` for Photography). Empty when none match."""
+        def norm(s: str) -> str:
+            return re.sub(r"[^a-z0-9]", "", s.lower())
+        wanted = [norm(t) for t in tags if len(norm(t)) >= 4]
+        ids = [c.id for c in self.categories] + [a.category for a in self.angles]
+        out: list[Category] = []
+        for cid in dict.fromkeys(ids):
+            c = self.category(cid)
+            names = {norm(c.id), norm(c.label)}
+            if any(n.startswith(t) for t in wanted for n in names):
+                out.append(c)
+        return out
+
     def angle(self, key: str) -> Angle | None:
         return next((a for a in self.angles if a.key == key), None)
 

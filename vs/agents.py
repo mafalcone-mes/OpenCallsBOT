@@ -178,10 +178,14 @@ class Explorer(Agent):
 
     def work(self) -> None:
         from vs import rules as rules_mod
-        from vs.pipeline import prefilter
 
         run, conn = self.run, self.conn
         active = rules_mod.compile_rules(run.p)
+        # The sources go round in a cycle (run.jobs is oldest-read first). One
+        # read less than source_min_interval_h ago waits at the back: once the
+        # due ones are listed and pages are left in the budget, the round
+        # starts again from the one read longest ago.
+        later: list[tuple[str, dict, object]] = []
         for sid, cfg in run.jobs:
             if self.stopped():
                 return
@@ -189,59 +193,80 @@ class Explorer(Agent):
             if st and st["last_ok"] and not run.force:
                 age = datetime.now(timezone.utc) - datetime.fromisoformat(st["last_ok"])
                 if age < run.min_interval:
-                    run.say(f"{sid}: fetched {int(age.total_seconds() // 3600)} h ago, skipped (use force)")
+                    later.append((sid, cfg, st))
                     continue
-            if st and (st["blocked_runs"] or 0) >= 2 and cfg.get("adapter") == "jobspy" and not run.force:
-                run.say(f"{sid}: auto-disabled after 2 blocked runs")
-                continue
-            self.status, self.current = "working", sid
-            run.say(f"{sid}: listing")
-            rep = run.sources[sid] = {"items": 0, "processed": {}, "error": None, "pending": 0}
-            try:
-                if cfg["adapter"] == "watch":
-                    rep["changed"], items = watch_check(run.client, cfg)
-                else:
-                    items = list(ADAPTERS[cfg["adapter"]](run.client, sid, cfg))
-                listed = len(items)
-                self._seen_on_source(sid, cfg, st, items)
-                kept = [it for it in items if not rules_mod.reason(it.title, "", sid, active)]
-                if len(kept) < len(items):
-                    run.say(f"{sid}: {len(items) - len(kept)} skipped by your rules (title not in your fields / never-show)")
-                items = kept
-                today = datetime.now().date().isoformat()
-                closed = [it for it in items if ((it.hints or {}).get("deadline") or "9999")[:10] < today]
-                if closed:
-                    run.say(f"{sid}: {len(closed)} skipped, deadline already passed")
-                    items = [it for it in items if it not in closed]
-                # Every source is ranked cheaply (keywords + embeddings) before
-                # the slow model reads anything; "prefilter": false opts out.
-                if cfg.get("prefilter", True) is not False:
-                    before = len(items)
-                    items = prefilter(conn, run.portfolio, items, int(cfg.get("keep", run.keep)), run.model)
-                    run.say(f"{sid}: {before} listed, {len(items)} new and closest to your work kept")
-                conn.commit()
-                trimmed = False
-                if run.budget > 0 and run.sent + len(items) > run.budget:
-                    items, trimmed = items[:max(0, run.budget - run.sent)], True
-                    run.say(f"{sid}: {len(items)} read this time (max_pages_per_refresh); the rest at the next refresh")
-                run.sent += len(items)
-                history = ((db.row_dict(st)["items_history"] or []) if st else [])[-9:] + [listed]
-                run.listed(sid, listed, history, len(items), trimmed)
-                for it in items:
-                    self.next.put(it)
-            except Exception as e:
-                blocked = isinstance(e, Blocked) or "429" in str(e)
-                rep["error"] = f"{type(e).__name__}: {e}"
-                run.say(f"{sid}: ERROR {rep['error'][:200]}")
-                conn.execute(
-                    "INSERT INTO source_state(source_id, last_fetch, error, blocked_runs) VALUES(?,?,?,?) "
-                    "ON CONFLICT(source_id) DO UPDATE SET last_fetch=excluded.last_fetch, error=excluded.error, "
-                    "blocked_runs=source_state.blocked_runs + ?",
-                    (sid, db.now(), rep["error"][:500], int(blocked), int(blocked)))
-                conn.commit()
-            self.done += 1
-        self.current = ""
+            self._explore(sid, cfg, st, active)
+        if later and not self.stopped():
+            if run.budget > 0 and run.sent >= run.budget:
+                run.say(f"{len(later)} sources read in the last {run.min_interval.total_seconds() / 3600:g} h "
+                        "wait for the next refresh (page budget used up)")
+                return
+            run.say(("No source was due" if len(later) == len(run.jobs) else "Every due source is listed")
+                    + f": starting the round again with the {len(later)} read most recently, oldest first")
+            for sid, cfg, st in later:
+                if self.stopped():
+                    return
+                if run.budget > 0 and run.sent >= run.budget:
+                    run.say(f"Page budget used up: the round goes on from {sid} at the next refresh")
+                    return
+                self._explore(sid, cfg, st, active)
 
+    def _explore(self, sid: str, cfg: dict, st, active) -> None:
+        """List one source and hand its new pages to the Downloader."""
+        from vs import rules as rules_mod
+        from vs.pipeline import prefilter
+
+        run, conn = self.run, self.conn
+        if st and (st["blocked_runs"] or 0) >= 2 and cfg.get("adapter") == "jobspy" and not run.force:
+            run.say(f"{sid}: auto-disabled after 2 blocked runs")
+            return
+        self.status, self.current = "working", sid
+        run.say(f"{sid}: listing")
+        rep = run.sources[sid] = {"items": 0, "processed": {}, "error": None, "pending": 0}
+        try:
+            if cfg["adapter"] == "watch":
+                rep["changed"], items = watch_check(run.client, cfg)
+            else:
+                items = list(ADAPTERS[cfg["adapter"]](run.client, sid, cfg))
+            listed = len(items)
+            self._seen_on_source(sid, cfg, st, items)
+            kept = [it for it in items if not rules_mod.reason(it.title, "", sid, active)]
+            if len(kept) < len(items):
+                run.say(f"{sid}: {len(items) - len(kept)} skipped by your rules (title not in your fields / never-show)")
+            items = kept
+            today = datetime.now().date().isoformat()
+            closed = [it for it in items if ((it.hints or {}).get("deadline") or "9999")[:10] < today]
+            if closed:
+                run.say(f"{sid}: {len(closed)} skipped, deadline already passed")
+                items = [it for it in items if it not in closed]
+            # Every source is ranked cheaply (keywords + embeddings) before
+            # the slow model reads anything; "prefilter": false opts out.
+            if cfg.get("prefilter", True) is not False:
+                before = len(items)
+                items = prefilter(conn, run.portfolio, items, int(cfg.get("keep", run.keep)), run.model)
+                run.say(f"{sid}: {before} listed, {len(items)} new and closest to your work kept")
+            conn.commit()
+            trimmed = False
+            if run.budget > 0 and run.sent + len(items) > run.budget:
+                items, trimmed = items[:max(0, run.budget - run.sent)], True
+                run.say(f"{sid}: {len(items)} read this time (max_pages_per_refresh); the rest at the next refresh")
+            run.sent += len(items)
+            history = ((db.row_dict(st)["items_history"] or []) if st else [])[-9:] + [listed]
+            run.listed(sid, listed, history, len(items), trimmed)
+            for it in items:
+                self.next.put(it)
+        except Exception as e:
+            blocked = isinstance(e, Blocked) or "429" in str(e)
+            rep["error"] = f"{type(e).__name__}: {e}"
+            run.say(f"{sid}: ERROR {rep['error'][:200]}")
+            conn.execute(
+                "INSERT INTO source_state(source_id, last_fetch, error, blocked_runs) VALUES(?,?,?,?) "
+                "ON CONFLICT(source_id) DO UPDATE SET last_fetch=excluded.last_fetch, error=excluded.error, "
+                "blocked_runs=source_state.blocked_runs + ?",
+                (sid, db.now(), rep["error"][:500], int(blocked), int(blocked)))
+            conn.commit()
+        self.done += 1
+        self.current = ""
 
     def _seen_on_source(self, sid: str, cfg: dict, st, items: list) -> None:
         """Calls the source still lists are seen now; open calls a complete

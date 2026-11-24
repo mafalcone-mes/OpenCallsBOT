@@ -49,4 +49,17 @@
       </div>
     </details>
   </div>
+  {% if dev %}
+  {% macro pct(v) %}{{ '–' if v is none else (v * 100) | round | int }}{% endmacro %}
+  <details class="dev-card">
+    <summary><code>dev</code> #{{ o.id }} · {{ o.source_id or 'no source' }} · {{ o.bucket or 'no bucket' }}</summary>
+    <dl class="dev-kv">
+      <dt>Scores</dt><dd><code>portfolio {{ pct(o.portfolio_sim) }} · taste {{ pct(o.taste) }} · keyword {{ pct(o.keyword) }} · source {{ pct(o.source_w) }}</code></dd>
+      <dt>Steps</dt><dd><code>prelim {{ '–' if o.prelim is none else '%.2f' | format(o.prelim) }} → llm {{ pct(o.llm_fit) }} → final {{ pct(o.final) }}</code></dd>
+      <dt>Read</dt><dd>{{ o.extraction_status }} · {{ o.status }} · seen {{ (o.first_seen or '')[:10] }} → {{ (o.last_seen or '')[:10] }}</dd>
+      {% if o.red_flags %}<dt>Flags</dt><dd>{{ o.red_flags | join('; ') }}</dd>{% endif %}
+    </dl>
+    <p class="dev-links"><a href="/dev/o/{{ o.id }}.json" target="_blank">JSON</a> · <a href="/dev/o/{{ o.id }}/raw" target="_blank">Page text</a></p>
+  </details>
+  {% endif %}
 </article>

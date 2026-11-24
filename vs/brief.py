@@ -12,7 +12,7 @@ from pathlib import Path
 import markdown as md
 from jinja2 import Environment, FileSystemLoader
 
-from vs import db, embed, llm, present
+from vs import choices, db, embed, llm, present
 from vs import portfolio as portfolio_mod
 from vs.config import APP_DIR, OUTPUT_DIR, prefs
 from vs.ics import to_ics
@@ -20,19 +20,21 @@ from vs.pdf_export import ExportError, export_portfolio, html_to_pdf
 
 SELECT_SYSTEM = """You help a creative professional choose which of their projects to present for an application.
 Pick 2 to 4 project angles (id = slug:category) that best answer what the call asks for. Use at most one angle per project.
-For each: why it fits this call specifically, and which aspect to stress (method, theme, format, collaboration, outcome).
-Order them as they should appear in the portfolio (strongest first). Only use ids from the list."""
+For each: why it fits this call specifically, which aspect to stress (method, theme, format, collaboration, outcome),
+and its importance: "main" (the lead project, gets the most pages), "supporting" or "brief" (one image).
+Order them as they should appear in the portfolio (strongest first). Only use ids from the list.
+If THEIR OWN RULES or HOW THEY BUILT IT FOR SIMILAR CALLS are given, follow them: they are how this person chooses."""
 
 
-def _select_projects(portfolio, o: dict, ranked: list[str]) -> list[dict]:
+def _select_projects(portfolio, o: dict, ranked: list[str], learned: str = "") -> list[dict]:
     keys = [a.key for a in portfolio.angles]
     schema = {
         "type": "object",
         "properties": {"selected": {"type": "array", "minItems": 1, "maxItems": 4, "items": {
             "type": "object",
             "properties": {"angle": {"type": "string", "enum": keys}, "why": {"type": "string"},
-                           "stress": {"type": "string"}},
-            "required": ["angle", "why", "stress"]}}},
+                           "stress": {"type": "string"}, "importance": {"type": "string", "enum": list(choices.LEVELS)}},
+            "required": ["angle", "why", "stress", "importance"]}}},
         "required": ["selected"],
     }
     lines = []
@@ -47,13 +49,16 @@ Asked documents: {json.dumps(o.get('required_docs') or [], ensure_ascii=False)}
 Excerpt: {(o.get('raw_text') or '')[:3000]}
 
 PROJECT ANGLES (most similar first)
-{chr(10).join(lines)}"""
+{chr(10).join(lines)}
+{chr(10) + learned if learned else ''}"""
     out = llm.chat_json(SELECT_SYSTEM, user, schema, temperature=0.1)
     seen, picked = set(), []
     for s in out.get("selected", []):
         slug = s["angle"].split(":")[0]
         if s["angle"] in keys and slug not in seen:
             seen.add(slug)
+            if s.get("importance") not in choices.LEVELS:
+                s["importance"] = "main" if not picked else "supporting"
             picked.append(s)
     return picked
 
@@ -68,23 +73,66 @@ def _limits(o: dict) -> dict:
 
 
 def _image_plan(portfolio, selected: list[dict], limits: dict, cover: bool, about: bool) -> list[str]:
-    n = len(selected)
-    budget = limits.get("pages")
-    fixed = int(cover) + int(about)
-    per_angle = None
-    if budget:
-        # each angle: 1 opening page + roughly 1 page per 1.5 images
-        spare = max(0, budget - fixed - n)
-        per_angle = max(0, math.floor(spare / max(1, n) * 1.5))
-    if limits.get("mb") and limits["mb"] <= 5:
-        per_angle = min(per_angle if per_angle is not None else 3, 3)
-    plan = []
+    """Images per project from its importance (main = all, supporting = 3,
+    brief = 1), then shrunk to fit the call's page / size limits, taking from
+    the least important projects first."""
+    want = []
     for s in selected:
         a = portfolio.angle(s["angle"])
-        want = min(a.image_count, 6 if per_angle is None else per_angle)
-        s["images"] = want
-        plan.append(f"{a.slug}:{a.category}:{want}")
+        cap = choices.LEVEL_IMAGES.get(s.get("importance") or "supporting", 3)
+        want.append(min(a.image_count, choices.MAX_IMAGES if cap is None else cap))
+    if limits.get("mb") and limits["mb"] <= 5:
+        want = [min(w, 3) for w in want]
+    budget = limits.get("pages")
+    if budget:
+        # each project: 1 opening page + roughly 1 page per 1.5 images
+        spare = max(0, budget - int(cover) - int(about) - len(selected))
+        room = math.floor(spare * 1.5)
+        rank = {"brief": 0, "supporting": 1, "main": 2}
+        order = sorted(range(len(selected)), key=lambda i: (rank.get(selected[i].get("importance"), 1), -i))
+        while sum(want) > room:
+            # one image less from the least important project that has more than one, then from any
+            i = next((i for i in order if want[i] > 1), next((i for i in order if want[i] > 0), None))
+            if i is None:
+                break
+            want[i] -= 1
+    plan = []
+    for s, w in zip(selected, want):
+        a = portfolio.angle(s["angle"])
+        s["images"] = w
+        plan.append(f"{a.slug}:{a.category}:{w}")
     return plan
+
+
+def editor_rows(portfolio, selected: list[dict], ranked: list[str]) -> list[dict]:
+    """Every project for the portfolio editor: the chosen ones first in their
+    order, then the others (closest to the call first), each with its
+    categories to choose from."""
+    by_slug = {s["angle"].split(":", 1)[0]: s for s in selected}
+    order = [s["angle"].split(":", 1)[0] for s in selected]
+    for key in ranked:
+        slug = key.split(":", 1)[0]
+        if slug not in order:
+            order.append(slug)
+    for proj in portfolio.projects:
+        if proj.slug not in order:
+            order.append(proj.slug)
+    rows = []
+    for slug in order:
+        angles = [a for a in portfolio.angles if a.slug == slug]
+        if not angles:
+            continue
+        chosen = by_slug.get(slug)
+        best = next((k for k in ranked if k.split(":", 1)[0] == slug), angles[0].key)
+        proj = portfolio.project(slug)
+        rows.append({
+            "slug": slug, "name": angles[0].project_name, "year": proj.year if proj else None,
+            "shown": bool(chosen), "angle": chosen["angle"] if chosen else best,
+            "importance": chosen.get("importance", "supporting") if chosen else "supporting",
+            "categories": [(a.key, portfolio.category(a.category).label, a.image_count) for a in angles],
+            "why": chosen.get("why", "") if chosen else "",
+        })
+    return rows
 
 
 def checklist(o: dict, portfolio, me: dict) -> list[dict]:
@@ -121,7 +169,7 @@ def checklist(o: dict, portfolio, me: dict) -> list[dict]:
     return items
 
 
-def generate(opportunity_id: int, *, make_pdf: bool = True, log=print) -> dict:
+def _context(opportunity_id: int, learn: bool = True):
     with db.session() as conn:
         o = db.row_dict(conn.execute("SELECT * FROM opportunity WHERE id=?", (opportunity_id,)).fetchone())
         m = db.row_dict(conn.execute("SELECT * FROM match WHERE opportunity_id=?", (opportunity_id,)).fetchone()) or {}
@@ -131,12 +179,37 @@ def generate(opportunity_id: int, *, make_pdf: bool = True, log=print) -> dict:
         model = llm.embed_model()
         angles = embed.angle_vectors(conn, portfolio, model)
         ov = embed.ensure(conn, "opportunity", {o["dedup_key"]: embed.opportunity_text(o)}, model)[o["dedup_key"]]
+        learned = choices.prompt_block(conn, o, portfolio, model) if learn else ""
     ranked = sorted(angles, key=lambda k: float(angles[k] @ ov), reverse=True)
+    return o, m, portfolio, ranked, learned
 
-    log("Choosing projects")
-    selected = _select_projects(portfolio, o, ranked[:8])
+
+def propose(opportunity_id: int, *, log=print) -> dict:
+    """The app's pick (projects, order, importance), using what it learned
+    from your past choices. Returns {selected, ranked}."""
+    o, _, portfolio, ranked, learned = _context(opportunity_id)
+    log("Choosing projects" + (", following what you taught it" if learned else ""))
+    selected = _select_projects(portfolio, o, ranked[:8], learned)
     if not selected:
-        selected = [{"angle": k, "why": "closest to the call by content", "stress": ""} for k in ranked[:2]]
+        selected = [{"angle": k, "why": "closest to the call by content", "stress": "",
+                     "importance": "main" if i == 0 else "supporting"} for i, k in enumerate(ranked[:2])]
+    return {"selected": selected, "ranked": ranked}
+
+
+def generate(opportunity_id: int, *, make_pdf: bool = True, log=print) -> dict:
+    """Propose and build in one go, with no editing step (CLI, 'Brief only')."""
+    return build(opportunity_id, propose(opportunity_id, log=log)["selected"], make_pdf=make_pdf, log=log)
+
+
+def build(opportunity_id: int, selected: list[dict], *, make_pdf: bool = True, log=print) -> dict:
+    """The brief and the portfolio PDF from the final choice of projects."""
+    o, m, portfolio, _, _ = _context(opportunity_id, learn=False)
+    selected = [dict(s) for s in selected if portfolio.angle(s["angle"])]
+    if not selected:
+        raise ValueError("No projects chosen for the portfolio")
+    for s in selected:
+        s.setdefault("why", "")
+        s.setdefault("stress", "")
     me = prefs().get("me", {})
     anonymous = bool((o.get("submission") or {}).get("anonymous"))
     cover = about = not anonymous

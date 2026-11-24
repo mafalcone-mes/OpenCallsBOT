@@ -38,13 +38,22 @@ def progress_state() -> dict:
         team = list(_state.get("agents") or [])
         out = {**_state, "lines": list(_state["lines"][-12:])}
     out["agents"] = [a.snapshot() for a in team]
+    out["speed"] = llm.live_speed() if out["running"] else None
+    out["gpu_warning"] = llm.gpu_state.get("warning", "")
+    out["slow_tok_s"] = llm.SLOW_TOK_S
     return out
 
 
+# With the model on the CPU, a refresh reads at most this many pages (about
+# 2-3 minutes each there) instead of [fetch].max_pages_per_refresh.
+CPU_PAGE_BUDGET = 20
+
+
 def request_stop() -> bool:
-    """Ask a running refresh to stop reading pages and score what it has."""
+    """Ask a running refresh (or scoring) to stop reading pages and writing
+    explanations, and score what it has."""
     with _lock:
-        if _state["kind"] != "refresh" or not _state["running"] or _state["stopping"]:
+        if _state["kind"] not in ("refresh", "score") or not _state["running"] or _state["stopping"]:
             return False
         _state["stopping"] = True
         team = list(_state.get("agents") or [])
@@ -309,10 +318,11 @@ def prepare_item(client: PoliteClient, conn, item: RawItem) -> str | Prepared:
     text = item.text
     if item.needs_detail or not text:
         try:
-            r = client.get(item.url, max_age=timedelta(days=7))
+            # Only the page's text is saved, not its HTML (~20 times smaller).
+            r = client.get(item.url, max_age=timedelta(days=7), keep=lambda html: page_text(html, item.url))
             if r.status_code >= 400:
                 return "failed"
-            text = page_text(r.text, item.url) or item.snippet
+            text = r.text or item.snippet
         except Blocked:
             text = item.snippet
         except Exception:
@@ -353,8 +363,58 @@ def read_item(conn, prepared: Prepared, model: str) -> tuple[str, int | None]:
 
 
 def _merge_into(conn, keep: dict, urls: list[str]) -> None:
+    """A page just read is a listing already kept: add its address to it."""
     merged = set(json.loads(keep["source_urls"] or "[]")) | set(urls)
     conn.execute("UPDATE opportunity SET source_urls=?, last_seen=? WHERE id=?", (db.dumps(sorted(merged)), db.now(), keep["id"]))
+
+
+def _urls(o: dict) -> list[str]:
+    return list(o.get("source_urls") or [o["canonical_url"]])
+
+
+def _your_state(conn, o: dict) -> dict | None:
+    row = conn.execute("SELECT favourite, dismissed, app_status, notes FROM user_state WHERE opportunity_key=?",
+                       (o["dedup_key"],)).fetchone()
+    return dict(row) if row else None
+
+
+def _weight(s: dict | None) -> int:
+    """How much of you a listing holds: an application, then a save, a note, a dismissal."""
+    if not s:
+        return 0
+    return 8 * bool(s["app_status"]) + 4 * bool(s["favourite"]) + 2 * bool((s["notes"] or "").strip()) + bool(s["dismissed"])
+
+
+def _keeper(conn, a: dict, b: dict) -> tuple[dict, dict]:
+    """(keep, drop) for two listings of the same call: the one you saved,
+    applied to or wrote on stays, so your save, status, notes, to-dos and
+    brief (tied to it) stay visible; else the older one."""
+    return (b, a) if _weight(_your_state(conn, b)) > _weight(_your_state(conn, a)) else (a, b)
+
+
+def _carry_state(conn, keep: dict, drop: dict) -> None:
+    """Copy onto the kept listing what you set only on the dropped one (as
+    logged actions, so a rebuild from signals.jsonl keeps them)."""
+    from vs.examples import log_signal
+    gone, kept = _your_state(conn, drop), _your_state(conn, keep) or {"favourite": 0, "app_status": None, "notes": ""}
+    if not gone:
+        return
+    key = keep["dedup_key"]
+    if gone["favourite"] and not kept["favourite"]:
+        log_signal("favourite", conn=conn, key=key)
+    if gone["app_status"] and not kept["app_status"]:
+        log_signal("status", conn=conn, key=key, status=gone["app_status"])
+    if (gone["notes"] or "").strip() and gone["notes"].strip() not in (kept["notes"] or ""):
+        log_signal("note", conn=conn, key=key, text="\n\n".join(x for x in ((kept["notes"] or "").strip(), gone["notes"].strip()) if x))
+
+
+def _merge(conn, keep: dict, drop: dict) -> None:
+    """`drop` becomes a duplicate of `keep`, which takes its addresses and your state."""
+    keep["source_urls"] = sorted(set(_urls(keep)) | set(_urls(drop)))
+    conn.execute("UPDATE opportunity SET source_urls=?, last_seen=? WHERE id=?", (db.dumps(keep["source_urls"]), db.now(), keep["id"]))
+    conn.execute("UPDATE opportunity SET status='duplicate' WHERE id=?", (drop["id"],))
+    drop["status"] = "duplicate"
+    _carry_state(conn, keep, drop)
 
 
 def merge_near_duplicates(conn, model: str) -> int:
@@ -374,10 +434,20 @@ def merge_near_duplicates(conn, model: str) -> int:
         if o["status"] != "duplicate":
             for u in o.get("source_urls") or []:
                 by_url[canonical_url(u)] = o
-    restored = 0
+    restored = swapped = 0
     for d in [o for o in opps if o["status"] == "duplicate"]:
         keeper = by_url.get(d["dedup_key"])
         if keeper and why_same(keeper, d, cos(keeper, d)):
+            if _keeper(conn, keeper, d)[0] is d:
+                # merged before this rule: the copy you saved was hidden. It
+                # comes back with every address, the other one steps aside.
+                status = expiry.status_for(d)
+                conn.execute("UPDATE opportunity SET status=? WHERE id=?", (status, d["id"]))
+                d["status"] = status
+                _merge(conn, d, keeper)
+                for u in d["source_urls"]:
+                    by_url[canonical_url(u)] = d
+                swapped += 1
             continue
         status = expiry.status_for(d)
         conn.execute("UPDATE opportunity SET status=? WHERE id=?", (status, d["id"]))
@@ -389,24 +459,24 @@ def merge_near_duplicates(conn, model: str) -> int:
         restored += 1
     if restored:
         _say(f"Restored {restored} listing{'s' if restored != 1 else ''} that an older rule had merged by mistake")
+    if swapped:
+        _say(f"Brought back {swapped} saved listing{'s' if swapped != 1 else ''} hidden by a merge")
 
-    # 2. Merge listings that are the same call.
+    # 2. Merge listings that are the same call; the one holding your state stays.
     live = [o for o in opps if o["status"] in ("open", "expired")]
     merged, gone = 0, set()
     for i, a in enumerate(live):
         if a["id"] in gone:
             continue
         for b in live[i + 1:]:
-            if b["id"] in gone:
+            if b["id"] in gone or not why_same(a, b, cos(a, b)):
                 continue
-            reason = why_same(a, b, cos(a, b))
-            if reason:
-                _merge_into(conn, {"id": a["id"], "source_urls": db.dumps(a.get("source_urls") or [a["canonical_url"]])},
-                            b.get("source_urls") or [b["canonical_url"]])
-                a["source_urls"] = sorted(set((a.get("source_urls") or [a["canonical_url"]]) + (b.get("source_urls") or [b["canonical_url"]])))
-                conn.execute("UPDATE opportunity SET status='duplicate' WHERE id=?", (b["id"],))
-                gone.add(b["id"])
-                merged += 1
+            keep, drop = _keeper(conn, a, b)
+            _merge(conn, keep, drop)
+            gone.add(drop["id"])
+            merged += 1
+            if drop is a:
+                break  # `a` is now a duplicate: `b` meets the rest in its own turn
     if merged:
         _say(f"Merged {merged} duplicate listing{'s' if merged != 1 else ''}")
     return merged
@@ -430,6 +500,10 @@ def prefilter(conn, portfolio, items: list[RawItem], keep: int, model: str) -> l
     _, a_mat = embed.matrix(angles)
     ex = db.all_vecs(conn, "example", model)
     ref = np.vstack([a_mat] + list(ex.values())) if ex else a_mat
+    # Never hold the database while the model thinks: embedding a long listing
+    # (jobspy: hundreds of titles on the CPU) takes minutes, and the Reader and
+    # Scorer would give up waiting with "database is locked".
+    conn.commit()
     vecs = llm.embed([f"{it.title}. {it.snippet}" for it in fresh], model=model)
     # Keywords lead (calls are written in those terms); similarity to your
     # projects and examples breaks ties.
@@ -476,9 +550,18 @@ def refresh(*, force: bool = False, only: str | list[str] | None = None, rerank:
         model = llm.embed_model()
         llm.chat_model()  # fail early if no chat model
         _say(f"Models: pages read with {llm.extract_model()}, matches explained with {llm.chat_model()}")
+        cpu_warning = llm.check_gpu(llm.extract_model())
+        if cpu_warning:
+            _say(f"WARNING: {cpu_warning} This refresh reads at most {CPU_PAGE_BUDGET} pages.")
         p = prefs()
 
         jobs: list[tuple[str, dict]] = [(sid, cfg) for sid, cfg in p.get("sources", {}).items() if cfg.get("enabled", True)]
+        # A source for one field (sheet tag, e.g. "photography") is read only
+        # by people whose portfolio has that field.
+        off_field = [sid for sid, cfg in jobs if cfg.get("field_tags") and not portfolio.categories_for(cfg["field_tags"])]
+        if off_field:
+            _say(f"Skipped (not one of your portfolio's fields): {', '.join(off_field)}")
+            jobs = [j for j in jobs if j[0] not in off_field]
         jobs += [(f"watch:{w['name']}", {"adapter": "watch", **w}) for w in p.get("watchlist", [])]
         if only is not None or extra_jobs:
             wanted = {only} if isinstance(only, str) else set(only or [])
@@ -494,6 +577,8 @@ def refresh(*, force: bool = False, only: str | list[str] | None = None, rerank:
         llm.embed_options = {"num_gpu": 0}  # embeddings on the CPU: the chat model keeps the GPU
         run = agents_mod.Run(client=client, portfolio=portfolio, model=model, prefs=p, force=force, rerank=rerank,
                              say=_say, jobs=jobs)
+        if cpu_warning:
+            run.budget = min(run.budget, CPU_PAGE_BUDGET) if run.budget > 0 else CPU_PAGE_BUDGET
         team = agents_mod.build(run)
         with _lock:
             _state["agents"] = team
@@ -526,9 +611,10 @@ def refresh(*, force: bool = False, only: str | list[str] | None = None, rerank:
             counts["removed"] = cleaned["removed"]
             conn.commit()
             _say(housekeeping.describe(cleaned))
-            _say("Scoring everything again (discovery, explanations gone out of date)")
+            _say("Scoring everything again (discovery, explanations gone out of date)"
+                 + ("; you stopped the refresh, so no new explanations (they are written at the next one)" if _stopping() else ""))
             stale = p.get("weights", {}).get("rerank_stale_per_run", 10)
-            score_counts = score_mod().score_all(conn, portfolio, rerank=rerank, progress=_say,
+            score_counts = score_mod().score_all(conn, portfolio, rerank=rerank, progress=_say, should_stop=_stopping,
                                                  stale_limit=None if stale in (None, "") or int(stale) < 0 else int(stale))
             counts.update({f"score_{k}": v for k, v in score_counts.items()})
         for purpose, s in llm.take_stats().items():
@@ -591,7 +677,7 @@ def rescore(rerank: bool = True) -> dict:
             if changes["hidden"] or changes["restored"]:
                 _say(f"Your rules: {len(changes['hidden'])} hidden, {len(changes['restored'])} restored")
             conn.commit()
-            out = score_mod().score_all(conn, portfolio, rerank=rerank, progress=_say)
+            out = score_mod().score_all(conn, portfolio, rerank=rerank, progress=_say, should_stop=_stopping)
         _say(f"Done: {out.get('scored', 0)} scored, {out.get('reranked', 0)} explained")
         return out
     except Exception as e:

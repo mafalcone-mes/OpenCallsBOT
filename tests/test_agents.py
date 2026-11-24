@@ -65,6 +65,7 @@ def test_each_opportunity_is_scored_while_the_next_ones_are_still_being_read(mon
     monkeypatch.setattr(llm, "chat_model", lambda: "chat")
     monkeypatch.setattr(llm, "extract_model", lambda: "chat")
     monkeypatch.setattr(llm, "unload", lambda m: None)
+    monkeypatch.setattr(llm, "check_gpu", lambda model=None: None)
     monkeypatch.setattr(llm, "embed", lambda texts, model=None: [_vec(t) for t in texts])
     monkeypatch.setattr(extract, "extract", fake_extract)
     monkeypatch.setattr(extract, "verify", lambda data, text, lang="": {})
@@ -131,3 +132,51 @@ def test_downloader_uses_one_worker_per_site_in_listing_order(monkeypatch):
     assert [u for u in seen if "a.example" in u] == [it.url for it in items if "a.example" in it.url]
     assert run.counts["failed"] == 2 and run.counts["unchanged"] == 6
     assert down.status == "done"
+
+
+def _cycle(budget, ages_h, monkeypatch):
+    """Explorer over sources read `ages_h` hours ago (None = never); returns
+    the order it lists them in and what it said."""
+    from datetime import datetime, timedelta, timezone
+    said, listed = [], []
+    jobs = [(sid, {"adapter": "fake"}) for sid in ages_h]
+    run = _run(prefs={"fetch": {"max_pages_per_refresh": budget, "source_min_interval_h": 12}}, jobs=jobs,
+               say=said.append)
+    ex = agents.Explorer(run)
+    ex.conn = db.connect()
+    try:
+        ex.conn.execute("DELETE FROM source_state")
+        for sid, h in ages_h.items():
+            if h is not None:
+                ok = (datetime.now(timezone.utc) - timedelta(hours=h)).isoformat(timespec="seconds")
+                ex.conn.execute("INSERT INTO source_state(source_id, last_ok) VALUES(?,?)", (sid, ok))
+
+        def fake_explore(sid, cfg, st, active):
+            listed.append(sid)
+            run.sent += 2
+
+        monkeypatch.setattr(ex, "_explore", fake_explore)
+        ex.work()
+    finally:
+        ex.conn.close()
+    return listed, said
+
+
+def test_sources_go_round_in_a_cycle_the_recent_ones_last(monkeypatch):
+    listed, said = _cycle(0, {"old": 30, "never": None, "recent": 9, "recent2": 2}, monkeypatch)
+    assert listed == ["old", "never", "recent", "recent2"], "nothing is dropped: the round starts again"
+    assert any("starting the round again" in s for s in said)
+
+
+def test_when_no_source_is_due_the_round_starts_again_from_the_oldest(monkeypatch):
+    listed, said = _cycle(0, {"a": 9, "b": 3}, monkeypatch)
+    assert listed == ["a", "b"]
+    assert any(s.startswith("No source was due") for s in said)
+
+
+def test_the_page_budget_still_stops_the_round(monkeypatch):
+    listed, said = _cycle(4, {"old": 30, "old2": 20, "recent": 9}, monkeypatch)
+    assert listed == ["old", "old2"], "budget used up by the due ones: the recent one waits"
+    listed, said = _cycle(4, {"old": 30, "r1": 9, "r2": 5, "r3": 1}, monkeypatch)
+    assert listed == ["old", "r1"]
+    assert any("goes on from r2" in s for s in said)

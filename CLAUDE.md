@@ -66,5 +66,13 @@ or `studios.toml`. `preferences.example.toml` is the template.
 ## Running
 
 - Windows: `start.bat`; macOS/Linux: `./start.sh`; or `uv run vs serve`.
+- Developer view: `start-dev.bat` (`VS_DEV=1`, port 8767; `start-dev.bat design`
+  for the design board on 8768). Right-hand bar from `vs/devtools.py` +
+  `_dev_panel.html`; without `VS_DEV` nothing renders and `/dev/*` is 404.
+- `update-ai.bat` (`scripts/update_ai.ps1`): updates Ollama, tests the model is
+  on the GPU, and if not goes back to the last version that worked (only its
+  number is kept, in `%LOCALAPPDATA%\Ollama-last-good.txt`; the installer is
+  downloaded again from Ollama's GitHub releases, no local copy). Then opens
+  the NVIDIA app. Also a button in the developer view.
 - Tests: `uv run pytest` (offline; they use `preferences.example.toml`).
 - Installation on a new machine: `INSTALL_FOR_AI.md`.

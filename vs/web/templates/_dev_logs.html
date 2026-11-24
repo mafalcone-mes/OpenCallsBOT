@@ -1,0 +1,32 @@
+{# While the update script runs, read its log again every 3 s. #}
+<div {% if update_running %}hx-get="/dev/panel/logs" hx-trigger="every 3s" hx-target="#dev-logs" hx-swap="innerHTML"{% endif %}>
+{% if update_log or update_running %}
+<h3 class="dev-h">Update script {% if update_running %}<span class="dev-tag warn">running</span>{% endif %}</h3>
+<pre class="dev-log">{{ update_log or 'Starting…' }}</pre>
+{% endif %}
+
+<h3 class="dev-h">Refreshes</h3>
+<ul class="dev-runs">
+  {% for r in runs %}
+  <li><a href="/runs/{{ r.id }}">#{{ r.id }}</a> {{ (r.started or '')[:16] | replace('T', ' ') }}
+    <span class="dev-tag {{ 'ok' if r.status == 'done' else 'bad' if r.status == 'failed' else 'warn' }}">{{ r.status }}</span>
+    {% if r.counts is mapping %}<div class="small muted">{% for k, v in r.counts.items() if v is number %}{{ k }} {{ v }}{{ ' · ' if not loop.last }}{% endfor %}</div>{% endif %}
+  </li>
+  {% else %}
+  <li class="muted small">No refresh yet.</li>
+  {% endfor %}
+</ul>
+
+{% if run_log %}
+<h3 class="dev-h">Last refresh log</h3>
+<pre class="dev-log">{{ run_log }}</pre>
+{% endif %}
+
+<h3 class="dev-h">Ollama log</h3>
+{% if ollama_path %}
+<p class="small muted"><code>{{ ollama_path }}</code></p>
+<pre class="dev-log">{{ ollama_log }}</pre>
+{% else %}
+<p class="muted small">No Ollama log found. start-dev.bat saves it in data\logs\ollama.log when it starts Ollama.</p>
+{% endif %}
+</div>

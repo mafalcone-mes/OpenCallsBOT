@@ -1,0 +1,56 @@
+{% set ol = s.ollama %}
+<h3 class="dev-h">Ollama</h3>
+{% if not ol.up %}
+<p class="dev-bad">Not reachable at <code>{{ ol.host }}</code>.</p>
+{% else %}
+<dl class="dev-kv">
+  <dt>Version</dt><dd><code>{{ ol.version }}</code></dd>
+  <dt>Host</dt><dd><code>{{ ol.host }}</code></dd>
+</dl>
+{% for m in ol.loaded %}
+<div class="dev-model">
+  <strong>{{ m.name }}</strong>
+  {% if m.gpu is none %}<span class="dev-tag">?</span>
+  {% elif m.gpu >= 0.9 %}<span class="dev-tag ok">{{ (m.gpu * 100) | round | int }}% GPU</span>
+  {% elif m.gpu < 0.05 %}<span class="dev-tag bad">100% CPU</span>
+  {% else %}<span class="dev-tag warn">{{ (m.gpu * 100) | round | int }}% GPU</span>{% endif %}
+  <div class="small muted">{{ human(m.size) }} · context {{ m.context or '?' }} · loaded until {{ m.until or '?' }}</div>
+</div>
+{% else %}
+<p class="muted small">No model loaded right now (Ollama unloads them after a few idle minutes). <em>Check GPU</em> in Actions loads one.</p>
+{% endfor %}
+{% endif %}
+{# The warning is from the last check; a live reading of the same model now on the GPU makes it stale. #}
+{% set live_ok = ol.up and (ol.loaded | selectattr('name', 'equalto', s.gpu_state.model) | selectattr('gpu') | selectattr('gpu', 'ge', 0.9) | list) %}
+{% if s.gpu_state.warning and not live_ok %}<p class="dev-bad small">{{ s.gpu_state.warning }}</p>{% endif %}
+{% if s.speed %}<p class="small muted">Last {{ s.speed.calls }} model calls: {{ '%.1f' | format(s.speed.s_per_call) }} s each{% if s.speed.tok_s %}, {{ s.speed.tok_s | round | int }} tok/s{% endif %}</p>{% endif %}
+
+<h3 class="dev-h">Graphics card</h3>
+{% if s.gpu %}
+<dl class="dev-kv">
+  <dt>Card</dt><dd>{{ s.gpu.name }}</dd>
+  <dt>Driver</dt><dd><code>{{ s.gpu.driver }}</code></dd>
+  <dt>Memory</dt><dd>{{ s.gpu.mem_used }} / {{ s.gpu.mem_total }} MB</dd>
+  <dt>In use</dt><dd>{{ s.gpu.util }}% · {{ s.gpu.temp }} °C</dd>
+</dl>
+{% else %}
+<p class="muted small">No NVIDIA card or driver found (nvidia-smi).</p>
+{% endif %}
+
+<h3 class="dev-h">Storage</h3>
+{% set st = s.storage %}
+<dl class="dev-kv">
+  <dt>Data</dt><dd><code>{{ st.data_dir }}</code></dd>
+  <dt>Database</dt><dd>{{ st.db }}</dd>
+  <dt>Raw pages</dt><dd>{{ st.raw }}</dd>
+  <dt>Calls</dt><dd>{{ st.counts.opportunity }} ({{ st.open }} open) · {{ st.counts.match }} scored</dd>
+  <dt>Embeddings</dt><dd>{{ st.counts.embedding }}</dd>
+  <dt>Cache</dt><dd>{{ st.counts.http_cache }} pages · {{ st.counts.page_snapshot }} snapshots</dd>
+  <dt>Runs</dt><dd>{{ st.counts.run }} · chats {{ st.counts.chat }}</dd>
+</dl>
+
+<h3 class="dev-h">App</h3>
+<dl class="dev-kv">
+  <dt>Git</dt><dd><code>{{ s.git }}</code></dd>
+  <dt>Python</dt><dd><code>{{ s.python }}</code> · {{ s.os }}</dd>
+</dl>

@@ -1,0 +1,110 @@
+{# Developer view (start-dev.bat only): a right-hand bar that collapses to a
+   column of icons like the left one. Each section opens downwards under its
+   button and pushes the next buttons down; the open ones are remembered. #}
+<aside class="devbar" id="devbar" aria-label="Developer tools">
+  <div class="dev-head">
+    <button class="btn ghost dev-rail" type="button" id="dev-rail" onclick="toggleDevRail()" aria-controls="devbar" aria-expanded="true"
+            aria-label="Collapse the developer tools" title="Collapse the developer tools">{{ icon('panel-right', 20) }}</button>
+    <span class="dev-title dev-text">{{ icon('terminal', 18) }} Developer</span>
+    <button class="btn ghost dev-close" type="button" onclick="toggleDevbar(false)" aria-label="Close the developer tools">{{ icon('x', 20) }}</button>
+  </div>
+  <p class="dev-msg dev-text" id="dev-msg" role="status" aria-live="polite"></p>
+
+  {% macro section(id, label, ic) %}
+  <section class="dev-sec" data-sec="{{ id }}">
+    <button class="dev-toggle" type="button" id="dev-t-{{ id }}" aria-expanded="false" aria-controls="dev-b-{{ id }}"
+            onclick="devSection('{{ id }}')" title="{{ label }}">
+      {{ icon(ic, 18) }} <span class="dev-text">{{ label }}</span> <span class="dev-chev dev-text">{{ icon('chevron-down', 16) }}</span>
+    </button>
+    <div class="dev-body" id="dev-b-{{ id }}" role="region" aria-labelledby="dev-t-{{ id }}">
+      <div class="dev-inner">{{ caller() }}</div>
+    </div>
+  </section>
+  {% endmacro %}
+
+  {% call section('system', 'System', 'cpu') %}
+    <div id="dev-system" hx-get="/dev/panel/system" hx-trigger="dev-open once, dev-reload" hx-swap="innerHTML">
+      <p class="muted small">Loading…</p>
+    </div>
+    <button class="btn ghost small-btn" type="button" onclick="htmx.trigger('#dev-system', 'dev-reload')">{{ icon('refresh-cw', 14) }} Check again</button>
+  {% endcall %}
+
+  {% call section('actions', 'Actions', 'terminal') %}
+    {% set busy = progress.running %}
+    <div class="dev-actions">
+      <button class="btn" hx-post="/dev/do/gpu" hx-target="#dev-msg" hx-disabled-elt="this" title="Load the reading model and see whether it sits on the GPU">{{ icon('cpu', 16) }} Check GPU</button>
+      <button class="btn" hx-post="/dev/do/update" hx-target="#dev-msg" hx-disabled-elt="this" {{ 'disabled' if busy }}
+              hx-confirm="Update Ollama now? It stops for a minute, then the script tests the GPU and goes back to the old version if the new one can't use it.">{{ icon('download', 16) }} Update Ollama + NVIDIA</button>
+      <form method="post" action="/rescore"><button class="btn" {{ 'disabled' if busy }}>{{ icon('rotate-ccw', 16) }} Score everything again</button></form>
+      <form method="post" action="/refresh"><input type="hidden" name="force" value="1"><button class="btn" {{ 'disabled' if busy }} title="Ignore each source's minimum interval">{{ icon('refresh-cw', 16) }} Refresh all sources now</button></form>
+      <button class="btn" hx-post="/dev/do/sheet" hx-target="#dev-msg" hx-disabled-elt="this">{{ icon('download', 16) }} Read the Google Sheet again</button>
+      <button class="btn" hx-post="/dev/do/http-cache" hx-target="#dev-msg" hx-disabled-elt="this" {{ 'disabled' if busy }}
+              hx-confirm="Forget the saved pages? The next refresh downloads every page again (slower).">{{ icon('trash-2', 16) }} Clear the page cache</button>
+      <form method="post" action="/restart"><button class="btn">{{ icon('rotate-ccw', 16) }} Restart the app</button></form>
+    </div>
+    {% if busy %}<p class="muted small">Some actions wait until the refresh has finished.</p>{% endif %}
+  {% endcall %}
+
+  {% call section('page', 'This page', 'scan-search') %}
+    <dl class="dev-kv">
+      <dt>Path</dt><dd><code>{{ request.url.path }}{{ '?' ~ request.url.query if request.url.query }}</code></dd>
+      <dt>View</dt><dd><code>{{ view or '–' }}</code></dd>
+      {% if o is defined and o and o.id %}
+      <dt>Id</dt><dd><code>{{ o.id }}</code></dd>
+      <dt>Key</dt><dd><code>{{ o.dedup_key }}</code></dd>
+      <dt>Source</dt><dd><code>{{ o.source_id or '–' }}</code></dd>
+      <dt>Type</dt><dd><code>{{ o.type }}</code> · {{ o.status }} · {{ o.extraction_status }}</dd>
+      <dt>Seen</dt><dd>{{ (o.first_seen or '')[:10] }} → {{ (o.last_seen or '')[:10] }}</dd>
+      <dt>Hash</dt><dd><code>{{ (o.content_hash or '')[:12] }}</code></dd>
+      {% endif %}
+    </dl>
+    {% if o is defined and o and o.id %}
+    <p class="dev-links"><a href="/dev/o/{{ o.id }}.json" target="_blank">All fields (JSON)</a> · <a href="/dev/o/{{ o.id }}/raw" target="_blank">Text read from the page</a></p>
+    {% else %}
+    <p class="muted small">Open an opportunity to see its fields here. In the lists each card has a <strong>dev</strong> line with its scores.</p>
+    {% endif %}
+  {% endcall %}
+
+  {% call section('logs', 'Logs and runs', 'file-text') %}
+    <div id="dev-logs" hx-get="/dev/panel/logs" hx-trigger="dev-open once, dev-reload" hx-swap="innerHTML">
+      <p class="muted small">Loading…</p>
+    </div>
+    <button class="btn ghost small-btn" type="button" onclick="htmx.trigger('#dev-logs', 'dev-reload')">{{ icon('refresh-cw', 14) }} Read again</button>
+  {% endcall %}
+</aside>
+<div class="dev-backdrop" onclick="toggleDevbar(false)" hidden></div>
+<script>
+  // Wide screens: the bar collapses to a column of icons, remembered in this browser.
+  function toggleDevRail(rail) {
+    const root = document.documentElement;
+    rail = rail ?? root.dataset.dev !== "rail";
+    if (rail) root.dataset.dev = "rail"; else delete root.dataset.dev;
+    try { rail ? localStorage.setItem("devbar", "rail") : localStorage.removeItem("devbar"); } catch (e) {}
+    const b = document.getElementById("dev-rail"), label = rail ? "Expand the developer tools" : "Collapse the developer tools";
+    b.setAttribute("aria-expanded", String(!rail)); b.setAttribute("aria-label", label); b.title = label;
+  }
+  // Phone and tablet: the bar slides in from the right.
+  function toggleDevbar(open) {
+    document.body.classList.toggle("dev-open", open);
+    document.querySelector(".dev-backdrop").hidden = !open;
+  }
+  function devOpenSections() { try { return JSON.parse(localStorage.getItem("devsections") || "[]"); } catch (e) { return []; } }
+  // A section opens under its button (the next ones move down). From the
+  // icon column, a click opens the bar on that section.
+  function devSection(id, open) {
+    const root = document.documentElement;
+    if (root.dataset.dev === "rail" && open === undefined) { toggleDevRail(false); open = true; }
+    const t = document.getElementById("dev-t-" + id), sec = t.closest(".dev-sec");
+    open = open ?? t.getAttribute("aria-expanded") !== "true";
+    t.setAttribute("aria-expanded", String(open));
+    sec.classList.toggle("open", open);
+    if (open) sec.querySelectorAll("[hx-trigger*='dev-open']").forEach(el => htmx.trigger(el, "dev-open"));
+    const list = devOpenSections().filter(s => s !== id);
+    if (open) list.push(id);
+    try { localStorage.setItem("devsections", JSON.stringify(list)); } catch (e) {}
+  }
+  toggleDevRail(document.documentElement.dataset.dev === "rail");
+  // after htmx has started (it loads deferred), so open sections can load their content
+  window.addEventListener("load", () => devOpenSections().forEach(id => document.getElementById("dev-t-" + id) && devSection(id, true)));
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && document.body.classList.contains("dev-open")) toggleDevbar(false); });
+</script>

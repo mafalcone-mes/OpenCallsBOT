@@ -23,14 +23,22 @@ sysctl -n hw.memsize | awk '{print $1/1073741824 " GB"}'   # total RAM
 df -h ~ | tail -1                         # free disk: need ~12 GB for the models
 ```
 
-Pick the models from this table and remember the choice for step 5:
+Pick **one row** of this table for this machine and remember it for step 5.
+Keep the whole table in this guide: other people install on other machines.
 
-| Machine | Chat model (`[llm].model`) | Fallback | Embedding model | `num_ctx` | Notes |
+| Machine | Chat model (`[llm].model`) | Fallback (optional) | Embedding model | `num_ctx` | Notes |
 |---|---|---|---|---|---|
 | Apple Silicon, 32 GB+ | `qwen3.5:9b` | `qwen3:8b` | `bge-m3` | 8192 | Comfortable |
 | Apple Silicon, 16-24 GB | `qwen3.5:9b` | `qwen3:8b` | `bge-m3` | 6144 | Close heavy apps during a refresh |
 | Apple Silicon, 8 GB | `qwen3:4b` | `qwen3:1.7b` | `qwen3-embedding:0.6b` | 4096 | Slower, less precise reading of calls |
 | Intel Mac (any RAM) | `qwen3:4b` | `qwen3:1.7b` | `qwen3-embedding:0.6b` | 4096 | No GPU: very slow. Tell the person; suggest refreshing a few sources at a time |
+| Windows, NVIDIA GPU 8 GB+ | `qwen3.5:9b` | `qwen3:8b` | `bge-m3` | 6144 | 8192 spills part of the model onto the CPU on 8 GB of video memory |
+| Windows, no NVIDIA GPU | `qwen3:4b` | `qwen3:1.7b` | `qwen3-embedding:0.6b` | 4096 | Very slow, as on an Intel Mac |
+
+**Only download what this machine's row needs** (step 5): models from other
+rows are several GB each and the app never uses them. The fallback is used
+only if the chat model is missing; skip it when disk space is short and leave
+`fallback_model` out of `preferences.toml`.
 
 If a model name is no longer available in Ollama's library, choose the closest
 current multilingual model of the same size that supports JSON-schema output,
@@ -58,7 +66,7 @@ Check that models run on the GPU, not the CPU (on CPU a refresh is about 10x
 slower: roughly 2 minutes per page instead of 10-15 s):
 
 ```bash
-ollama run qwen3:8b "hi" >/dev/null && ollama ps   # PROCESSOR must say "100% GPU" (or a GPU/CPU split)
+ollama run <chat model from your row> "hi" >/dev/null && ollama ps   # PROCESSOR must say "100% GPU" (or a GPU/CPU split); run it after step 5
 ```
 
 On Windows with an NVIDIA card, if it says `100% CPU`: update Ollama and the
@@ -93,12 +101,18 @@ loosen other pins at random.
 
 ## 5. Download the models (from the table in step 1)
 
+Pull only the models in this machine's row, nothing else. Example for the
+`qwen3.5:9b` rows:
+
 ```bash
-ollama pull qwen3.5:9b      # chat model (~6.6 GB); replace with your table choice
-ollama pull qwen3:8b        # fallback
+ollama pull qwen3.5:9b      # chat model (~6.6 GB)
 ollama pull bge-m3          # embeddings (~1.2 GB)
-ollama list
+ollama pull qwen3:8b        # fallback (~5.2 GB), optional
+ollama list                 # nothing beyond the row: `ollama rm <name>` what isn't in it (ask first)
 ```
+
+The embedding model must match `[llm].embed_model` from the first refresh on:
+changing it later means computing every embedding again.
 
 ## 6. Interview the person, then write `preferences.toml`
 

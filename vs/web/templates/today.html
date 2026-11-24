@@ -25,10 +25,11 @@
     </ul>
   </div>
   {# loads the model while the question is typed, so the first answer doesn't wait for it #}
-  <div hidden hx-post="/chat/warm" hx-trigger="load" hx-swap="none"></div>
 </section>
 
 <div class="today home-body">
+  {# ...and checks it is on the GPU: a warning replaces this when it runs on the CPU #}
+  <div hx-post="/chat/warm" hx-trigger="load" hx-swap="outerHTML"></div>
   {# Who Oppo searches for, read from the portfolio; what it lacks can be uploaded here (kept in data/profile/). #}
   <section class="profile" id="profile" aria-labelledby="profile-h">
     <div class="profile-id">

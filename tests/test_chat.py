@@ -104,7 +104,7 @@ def test_home_has_the_hero_and_a_question_opens_a_chat():
     client = TestClient(app)
     home = client.get("/").text
     hero = home.split('class="hero"')[1].split("</section>")[0]
-    assert 'action="/ask"' in hero and 'href="/ask?q=my+saved+ones"' in hero and 'hx-post="/chat/warm"' in hero
+    assert 'action="/ask"' in hero and 'href="/ask?q=my+saved+ones"' in hero and 'hx-post="/chat/warm"' in home
     assert 'href="/feed"' in home and 'id="closing-h"' in home  # the sections below the hero
     assert 'id="sb-rail"' in home and 'title="Home"' in home  # the side bar collapses; Oppo leads Home
     r = client.get("/ask", follow_redirects=False)  # no empty chat page
@@ -351,21 +351,22 @@ def test_the_ask_page_loads_the_model_while_you_type(monkeypatch):
     from vs.web.app import app
     warmed = []
     monkeypatch.setattr(llm, "warm", lambda *a, **k: warmed.append(1))
+    monkeypatch.setattr(llm, "chat_model", lambda: "m")
+    monkeypatch.setattr(llm, "on_gpu", lambda m: 1.0)
     client = TestClient(app)
     assert 'hx-post="/chat/warm"' in client.get("/").text
-    assert client.post("/chat/warm").status_code == 204
-    import time
-    for _ in range(50):
-        if warmed:
-            break
-        time.sleep(0.01)
-    assert warmed
+    r = client.post("/chat/warm")
+    assert r.status_code == 200 and r.text == "" and warmed  # loaded, on the GPU: nothing to show
+    # on the CPU (still after one reload): a warning to show on the page
+    monkeypatch.setattr(llm, "on_gpu", lambda m: 0.0)
+    monkeypatch.setattr(llm, "unload", lambda m: None)
+    assert "entirely on the CPU" in client.post("/chat/warm").text
     # not during a refresh: its agents decide what is in video memory
     warmed.clear()
     monkeypatch.setitem(pipeline._state, "running", True)
     assert client.post("/chat/warm").status_code == 204
-    time.sleep(0.05)
     assert not warmed
+    llm.gpu_state.clear()
 
 
 def test_a_list_named_in_the_question_is_shown_not_changed():

@@ -1,0 +1,901 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Map · Oppo</title>
+<script>
+  // Theme, Oppo's side bar and the Map bar as you left them, before the page paints.
+  try { const t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+  try { if (localStorage.getItem("sidebar") === "rail") document.documentElement.dataset.sb = "rail"; } catch (e) {}
+  try { if (localStorage.getItem("mapbar") === "rail") document.documentElement.dataset.mb = "rail"; } catch (e) {}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Bricolage+Grotesque:opsz,wght@12..96,400..700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
+<style>
+/* ---- Oppo's stylesheet (vs/web/static/app.css), copied in when the map is made ---- */
+/*APPCSS*/
+
+/* ---- the map page: only what app.css doesn't have ---- */
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body.app.mapapp { height: 100vh; overflow: hidden; grid-template-columns: 272px 400px minmax(0, 1fr); }
+@media (min-width: 901px) {
+  .app.mapapp { transition: grid-template-columns .2s cubic-bezier(.2, .8, .2, 1); }
+  [data-sb="rail"] .app.mapapp { grid-template-columns: 64px 400px minmax(0, 1fr); }
+  [data-mb="rail"] .app.mapapp { grid-template-columns: 272px 64px minmax(0, 1fr); }
+  [data-sb="rail"][data-mb="rail"] .app.mapapp { grid-template-columns: 64px 64px minmax(0, 1fr); }
+  [data-mb="rail"] .mapbar > :not(.mb-head) { display: none; }
+  [data-mb="rail"] .mb-head { flex-direction: column; padding: 0; }
+  [data-mb="rail"] .mb-head h1 { display: none; }
+  [data-mb="rail"] .mapbar { padding: var(--s-16) var(--s-12); align-items: center; }
+}
+@media (min-width: 901px) and (prefers-reduced-motion: reduce) { .app.mapapp { transition: none; } }
+/* the Map bar: the same look as Oppo's side bar, next to it */
+.mapbar { position: sticky; top: 0; height: 100vh; overflow-y: auto; background: var(--sidebar); border-right: 1px solid var(--line);
+  padding: var(--s-16); display: flex; flex-direction: column; gap: var(--s-16); z-index: 14; }
+.mb-head { display: flex; align-items: center; justify-content: space-between; min-height: var(--control-h); padding-left: var(--s-8); gap: var(--s-8); }
+.mb-head h1 { font-size: var(--t-head); line-height: var(--lh-head); font-weight: 600; }
+.mb-rail { width: var(--control-h); padding: 0; justify-content: center; border-color: transparent; color: var(--muted); }
+.mb-rail:hover { color: var(--strong); background: rgb(var(--ink-rgb) / .06); }
+.mapbar .mb-close { display: none; }
+.mb-section h2 { font-family: var(--body); font-size: var(--t-small); line-height: var(--lh-small); font-weight: 600; color: var(--muted); margin: 0 0 var(--s-8) var(--s-8); }
+.mapbar .groups { margin-top: 0; gap: var(--s-4); }
+.mapbar .groups a { min-height: 36px; padding: 0 var(--s-12); font-size: var(--t-small); }
+.mapbar .groups .g-n { min-width: 20px; }
+.mapbar input[type=search] { width: 100%; font-size: var(--t-small); }
+.mapbar .f-more { margin-top: var(--s-4); }
+.mapbar .f-more .check { display: flex; margin: 0; min-height: 32px; }
+.mb-explain { margin: var(--s-8) var(--s-8) 0; }
+.mb-count { color: var(--muted); font-size: var(--t-small); line-height: var(--lh-small); padding: 0 var(--s-8); }
+/* cards in the bar: the Feed's card, stacked to fit */
+.mapbar .cards.list { margin-top: var(--s-8); gap: var(--s-8); grid-template-columns: minmax(0, 1fr); }
+.mapbar .card.row { grid-template-columns: minmax(0, 1fr); grid-template-areas: "what" "when" "foot"; gap: var(--s-8); padding: var(--s-16); cursor: pointer; }
+.mapbar .card.row h3 a::after { display: none; }
+.mapbar .card.row .when { flex-direction: row; align-items: center; justify-content: space-between; text-align: left; }
+.mapbar .card.row .deadline { flex-direction: row; gap: var(--s-8); align-items: baseline; }
+.mapbar .card.row .foot { padding-top: var(--s-8); }
+.mapbar .card.row .foot > .btn.ghost:first-child { margin-left: calc(-1 * var(--s-8)); }
+.mapbar .card.row.on { border-color: var(--oppo); box-shadow: 0 0 0 1px var(--oppo); }
+.mapbar .card.row:hover { border-color: var(--control); }
+.why { display: flex; align-items: center; gap: var(--s-8); font-size: var(--t-small); line-height: var(--lh-small); color: var(--ink); }
+.why .pos { color: var(--muted); font-variant-numeric: tabular-nums; }
+.lean { position: relative; display: inline-block; width: 56px; height: 6px; border-radius: 3px; background: rgb(var(--ink-rgb) / .1); flex: none; }
+.lean::after { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--muted); }
+.lean i { position: absolute; top: 0; bottom: 0; border-radius: 3px; background: var(--oppo); }
+/* the opened call */
+.detail-back { align-self: flex-start; }
+.dt h2 { font-family: var(--display); font-weight: 500; font-size: var(--t-head); line-height: var(--lh-head); color: var(--strong); margin: 0; }
+.dt .org { color: var(--muted); font-size: var(--t-small); line-height: var(--lh-small); margin-top: var(--s-4); }
+.dt .chips { margin-top: var(--s-12); }
+.dt .links { display: flex; flex-wrap: wrap; gap: var(--s-8); margin-top: var(--s-12); }
+.dt-sec { margin-top: var(--s-24); }
+.dt-sec h3 { font-size: var(--t-small); line-height: var(--lh-small); font-weight: 600; color: var(--muted); margin-bottom: var(--s-4); }
+.dt-sec p, .dt-sec li { font-size: var(--t-small); line-height: var(--lh-small); }
+.dt-sec ul { list-style: none; display: flex; flex-direction: column; gap: var(--s-4); }
+.dt-sec ul li::before { content: "·"; color: var(--muted); margin-right: var(--s-8); }
+.dt-sec .flag { color: var(--bad); }
+.dt-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--s-4) var(--s-12); font-size: var(--t-small); line-height: var(--lh-small); }
+.dt-facts dt { color: var(--muted); }
+.note-box { border: 1px solid var(--oppo); border-left-width: 4px; background: var(--oppo-soft); border-radius: var(--s-8); padding: var(--s-8) var(--s-12); font-size: var(--t-small); line-height: var(--lh-small); }
+/* the map: edge to edge */
+.mapview { position: relative; height: 100vh; min-width: 0; background: var(--bg); }
+.mapview canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+.mapview canvas:active { cursor: grabbing; }
+.map-tools { position: absolute; top: var(--s-16); right: var(--s-16); display: flex; gap: var(--s-8); z-index: 7; }
+.map-tools .btn { background: var(--panel); }
+.view-switch { background: var(--panel); }
+.view-switch .btn { background: transparent; }
+/* the flows view: no second bar; the controls sit above the diagram, the calls are its last column */
+html .app.mapapp.flows-on { grid-template-columns: 272px minmax(0, 1fr); }
+html[data-sb="rail"] .app.mapapp.flows-on { grid-template-columns: 64px minmax(0, 1fr); }
+.flows-on .mapbar { display: none; }
+.flowsview { position: absolute; inset: 0; overflow-y: auto; }
+.fl-bar { position: sticky; top: 0; z-index: 4; background: var(--bg); border-bottom: 1px solid var(--line);
+  padding: var(--s-16) 220px var(--s-12) var(--s-24); display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--s-12) var(--s-24); }
+.fl-bar .mb-section { margin: 0 !important; }
+.fl-bar .mb-section h2 { margin-left: 0; }
+.fl-bar #catpills, .fl-bar #projfilter, .fl-bar .mb-explain { display: none; }
+.fl-bar .groups a { min-height: 36px; padding: 0 var(--s-12); font-size: var(--t-small); }
+.fl-bar #sec-search { display: flex; flex-direction: column; gap: var(--s-4); min-width: 260px; }
+.fl-active { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: var(--s-8); align-items: center; font-size: var(--t-small); color: var(--muted); }
+.fl-active:empty { display: none; }
+.fl-active button { display: inline-flex; align-items: center; gap: var(--s-4); min-height: 32px; padding: 0 var(--s-12); border-radius: 999px;
+  border: 1px solid var(--oppo); background: var(--oppo-soft); color: var(--strong); cursor: pointer; font-size: var(--t-small); }
+.fl-body { position: relative; }
+#flows { position: absolute; left: 0; top: 0; width: 100%; }
+.fl-calls { position: absolute; right: var(--s-24); top: 0; list-style: none; margin: 0; padding: 0; }
+.fl-calls li { position: absolute; left: 0; right: 0; }
+.fl-call { all: unset; box-sizing: border-box; display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 2px var(--s-8); align-items: center;
+  width: 100%; height: 50px; padding: var(--s-4) var(--s-12); border-radius: var(--s-8); cursor: pointer; border: 1px solid transparent; }
+.fl-call:hover, .fl-call:focus-visible, .fl-call.on { background: var(--panel); border-color: var(--line); }
+.fl-call.on { border-color: var(--oppo); }
+.fl-call .dot { width: 10px; height: 10px; border-radius: 50%; grid-row: 1 / span 2; }
+.fl-call .t { color: var(--strong); font-weight: 500; font-size: var(--t-small); line-height: var(--lh-small); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fl-call .s { color: var(--muted); font-size: 12px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; grid-column: 2; }
+.fl-call .score { grid-row: 1 / span 2; grid-column: 3; }
+.fl-more { position: absolute; left: 0; right: 0; }
+/* one call opened from the flows: a drawer on the right, like a side bar */
+.drawer { position: absolute; top: 0; right: 0; bottom: 0; width: min(440px, 92%); z-index: 8; overflow-y: auto; background: var(--sidebar);
+  border-left: 1px solid var(--line); box-shadow: -8px 0 48px var(--shadow); padding: var(--s-16) var(--s-24) var(--s-48); }
+.drawer-close { position: sticky; top: 0; float: right; z-index: 1; background: var(--sidebar); }
+.drawer #back { display: none; }
+#flows .fl-link { fill: none; cursor: pointer; transition: stroke-opacity .15s; }
+#flows .fl-node rect { cursor: pointer; }
+#flows text { font-family: "Instrument Sans", system-ui, sans-serif; fill: var(--ink); }
+#flows .fl-col { font-size: var(--t-small); font-weight: 600; fill: var(--muted); }
+#flows .fl-name { font-size: 13px; font-weight: 600; }
+#flows .fl-n { font-size: 12px; fill: var(--muted); }
+.map-open-bar { display: none; }
+.map-key { position: absolute; left: var(--s-16); bottom: var(--s-12); display: flex; flex-wrap: wrap; gap: var(--s-4) var(--s-16); align-items: center;
+  font-size: var(--t-small); color: var(--muted); pointer-events: none; text-shadow: 0 0 6px var(--bg); }
+.key { display: inline-flex; align-items: center; gap: var(--s-8); }
+.kdot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.kdia { width: 9px; height: 9px; transform: rotate(45deg); display: inline-block; }
+.map-status { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); pointer-events: none; }
+.tip { position: absolute; pointer-events: none; z-index: 3; background: var(--panel); border: 1px solid var(--line); border-radius: var(--s-12);
+  padding: var(--s-8) var(--s-12); max-width: 340px; font-size: var(--t-small); line-height: var(--lh-small); box-shadow: 0 8px 24px var(--shadow); }
+.tip strong { display: block; color: var(--strong); font-weight: 500; }
+/* Oppo's side bar: your path and collections, styled as its chats */
+.sb-chats ol { list-style: none; display: flex; flex-direction: column; gap: 2px; counter-reset: step; }
+.sb-chats ol button, .sb-chats .coll > button:first-child { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: var(--s-8); width: 100%;
+  min-height: var(--control-h); padding: 0 var(--s-12); border-radius: var(--s-8); cursor: pointer; }
+.sb-chats ol button { counter-increment: step; }
+.sb-chats ol button::before { content: counter(step); min-width: 20px; height: 20px; border-radius: 999px; background: var(--oppo-soft); color: var(--strong);
+  font-size: 11px; display: grid; place-items: center; font-variant-numeric: tabular-nums; flex: none; }
+.sb-chats ol button:hover, .sb-chats .coll > button:first-child:hover { background: rgb(var(--ink-rgb) / .06); }
+.sb-chats ol button.on { background: var(--oppo-soft); color: var(--strong); }
+.sb-chats ul { list-style: none; }
+.sb-chats .coll { display: flex; align-items: center; }
+.sb-save { display: flex; gap: var(--s-8); margin-top: var(--s-8); padding: 0 var(--s-4); }
+.sb-save input { flex: 1; min-width: 0; }
+[data-sb="rail"] .sb-path { display: none; }
+/* phone and tablet: the Map bar slides in over the map, like Oppo's side bar */
+@media (max-width: 900px) {
+  body.app.mapapp { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
+  .mapapp .page { display: contents; }
+  .mapapp .mobile-bar { grid-column: 1; }
+  .mapbar { position: fixed; left: 0; top: 0; bottom: 0; width: min(400px, 92vw); transform: translateX(-100%); visibility: hidden;
+    transition: transform .2s cubic-bezier(.2, .8, .2, 1), visibility 0s .2s; background: var(--bg); }
+  .mb-open .mapbar { transform: none; visibility: visible; transition: transform .2s cubic-bezier(.2, .8, .2, 1); box-shadow: 8px 0 48px var(--shadow); }
+  .mapbar .mb-rail { display: none; }
+  .mapbar .mb-close { display: inline-flex; }
+  .mapview { height: calc(100vh - 57px); }
+  .map-open-bar { display: inline-flex; }
+}
+</style>
+</head>
+<body class="app mapapp">
+<a class="skip" href="#mapbar">Skip to the list</a>
+
+<aside class="sidebar" id="sidebar" aria-label="Pages and path">
+  <div class="sb-head">
+    <a class="brand" href="http://127.0.0.1:8765/" title="Home"><span id="brand-oppo"></span> <span class="sb-text">Oppo</span></a>
+    <button class="btn ghost sb-close" type="button" onclick="toggleSidebar(false)" aria-label="Close the menu"><span data-ico="x" data-s="20"></span></button>
+    <button class="btn ghost sb-rail" type="button" id="sb-rail" onclick="toggleRail()" aria-controls="sidebar" aria-expanded="true"
+            aria-label="Collapse the menu" title="Collapse the menu"><span data-ico="panel-left" data-s="20"></span></button>
+  </div>
+  <nav class="sb-nav" aria-label="Main" id="sb-nav"></nav>
+  <div class="sb-chats sb-path">
+    <h2>Your path</h2>
+    <p class="small muted" id="trail-empty" style="padding: 0 12px">Every call you open joins this list: go back with a click, save the walk as a collection.</p>
+    <ol id="trail"></ol>
+    <div class="sb-save" id="save-row" hidden>
+      <input type="text" id="coll-name" placeholder="Collection name" aria-label="Collection name">
+      <button class="btn primary" id="coll-save" type="button">Save</button>
+    </div>
+    <button class="btn ghost" id="trail-clear" type="button" hidden style="margin: 4px 4px 0">Clear the path</button>
+    <div id="colls-box" hidden>
+      <h2>Collections</h2>
+      <ul id="colls"></ul>
+    </div>
+  </div>
+  <div class="sb-status">
+    <span id="sb-meta"></span>
+    <div class="theme-switch" role="group" aria-label="Theme" id="theme-switch"></div>
+  </div>
+</aside>
+<div class="sb-backdrop" onclick="toggleSidebar(false); toggleMapbar(false)" hidden></div>
+
+<aside class="mapbar" id="mapbar" aria-label="Sort, filters, list and details">
+  <div class="mb-head">
+    <h1>Map</h1>
+    <button class="btn ghost mb-close" type="button" onclick="toggleMapbar(false)" aria-label="Close"><span data-ico="x" data-s="20"></span></button>
+    <button class="btn ghost mb-rail" type="button" id="mb-rail" onclick="toggleMbRail()" aria-controls="mapbar" aria-expanded="true"
+            aria-label="Collapse the list" title="Collapse the list"><span data-ico="panel-left" data-s="20"></span></button>
+  </div>
+
+  <div id="view-list">
+    <div class="mb-section" id="sec-sort">
+      <h2>Order the list</h2>
+      <nav class="groups" aria-label="Sort" id="sort"></nav>
+      <nav class="groups" aria-label="Which end first" id="techside" hidden style="margin-top: 8px"></nav>
+      <p class="small muted mb-explain" id="sort-explain"></p>
+    </div>
+    <div class="mb-section" style="margin-top: 16px">
+      <h2>Kind</h2>
+      <nav class="groups" aria-label="Kind" id="kinds"></nav>
+    </div>
+    <div class="mb-section" id="sec-lens" style="margin-top: 16px">
+      <h2>Look through</h2>
+      <nav class="groups" aria-label="Lens" id="lenspills"></nav>
+      <nav class="groups" aria-label="Nodes" id="catpills" style="margin-top: 8px"></nav>
+      <p class="small muted mb-explain" id="projfilter" hidden></p>
+    </div>
+    <div class="mb-section" id="sec-search" style="margin-top: 16px">
+      <input type="search" id="q" aria-label="Search" placeholder="Search titles, organisations, projects">
+      <details class="f-more">
+        <summary>More to show</summary>
+        <div id="show"></div>
+      </details>
+    </div>
+    <p class="mb-count" id="count" style="margin-top: 16px"></p>
+    <div class="cards list" id="cards"></div>
+    <button class="btn" id="more" type="button" hidden style="margin-top: 12px; width: 100%; justify-content: center">Show more</button>
+  </div>
+
+  <div id="view-detail" hidden>
+    <button class="btn ghost detail-back" id="back" type="button"><span data-ico="chevron-left"></span> Back to the list</button>
+    <div class="dt" id="detail" style="margin-top: 8px"></div>
+  </div>
+</aside>
+
+<div class="page">
+  <header class="mobile-bar">
+    <button class="btn" type="button" onclick="toggleSidebar(true)" aria-controls="sidebar" aria-expanded="false" id="sb-open"><span data-ico="menu" data-s="18"></span> Menu</button>
+    <a class="brand" href="http://127.0.0.1:8765/"><span id="brand-oppo-m"></span> Oppo</a>
+  </header>
+  <main class="mapview" id="content">
+    <canvas id="c" aria-label="Map: your projects at the centre, the website categories around them, the calls outside"></canvas>
+    <div class="map-status" id="status">Drawing the map…</div>
+    <div class="tip" id="tip" hidden></div>
+    <div class="flowsview" id="flowsview" hidden>
+      <div class="fl-bar" id="fl-bar"><div class="fl-active" id="fl-active"></div></div>
+      <div class="fl-body" id="fl-body">
+        <svg id="flows" role="img" aria-label="Flows: your projects, through the nodes of the lens and the kinds of call, to the calls"></svg>
+        <ol class="fl-calls" id="fl-calls"></ol>
+      </div>
+    </div>
+    <aside class="drawer" id="drawer" hidden aria-label="The call you opened">
+      <button class="btn ghost drawer-close" id="drawer-close" type="button" aria-label="Close"><span data-ico="x" data-s="20"></span></button>
+    </aside>
+    <div class="map-tools">
+      <button class="btn map-open-bar" type="button" onclick="toggleMapbar(true)"><span data-ico="list-todo"></span> List and filters</button>
+      <div class="theme-switch view-switch" role="group" aria-label="View">
+        <button type="button" class="btn" data-view="map" aria-pressed="true">Map</button>
+        <button type="button" class="btn" data-view="flows" aria-pressed="false">Flows</button>
+      </div>
+      <button class="btn" id="fit" type="button"><span data-ico="rotate-ccw"></span> Whole map</button>
+    </div>
+    <div class="map-key" id="key"></div>
+  </main>
+</div>
+
+<script>
+const DATA = /*DATA*/null;
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const ico = (name, s = 16) => (DATA.icons[name] || "").replace(/width="16" height="16"/, `width="${s}" height="${s}"`);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const $ = id => document.getElementById(id);
+document.querySelectorAll("[data-ico]").forEach(el => { el.outerHTML = ico(el.dataset.ico, +(el.dataset.s || 16)); });
+$("brand-oppo").outerHTML = DATA.oppo; $("brand-oppo-m").outerHTML = DATA.oppo;
+const APP = "http://127.0.0.1:8765";
+const nodes = DATA.nodes;
+nodes.forEach((n, i) => { n.i = i; });
+const pct = v => Math.round(v * 100) + "%";
+const TOP = 0.85;   // the first 15% of the chosen sort turn radar green
+
+// ---- Oppo's side bar
+for (const [href, label, ic, on] of [["/", "Home", "house"], ["/feed", "Feed", "newspaper"], ["/discovery", "Discovery", "compass"],
+  ["/todo", "To-do", "list-todo"], ["/archive", "Archive", "archive"], ["/taste", "Taste", "sparkles"], ["", "Map", "scan-search", true]]) {
+  const a = document.createElement("a");
+  a.href = on ? "#mapbar" : APP + href; a.title = label;
+  if (on) { a.className = "on"; a.setAttribute("aria-current", "page"); }
+  a.innerHTML = `${ico(ic, 18)} <span class="sb-text">${label}</span>`;
+  $("sb-nav").append(a);
+}
+const backdrop = document.querySelector(".sb-backdrop");
+function toggleSidebar(open) {
+  document.body.classList.toggle("sb-open", open); backdrop.hidden = !open && !document.body.classList.contains("mb-open");
+  $("sb-open").setAttribute("aria-expanded", open);
+}
+function toggleMapbar(open) {
+  document.body.classList.toggle("mb-open", open); backdrop.hidden = !open && !document.body.classList.contains("sb-open");
+}
+function railToggle(attr, key, btn, rail, labels) {
+  const root = document.documentElement;
+  rail = rail ?? root.dataset[attr] !== "rail";
+  if (rail) root.dataset[attr] = "rail"; else delete root.dataset[attr];
+  try { rail ? localStorage.setItem(key, "rail") : localStorage.removeItem(key); } catch (e) {}
+  const b = $(btn), label = rail ? labels[0] : labels[1];
+  b.setAttribute("aria-expanded", String(!rail)); b.setAttribute("aria-label", label); b.title = label;
+  setTimeout(resize, 230);
+}
+const toggleRail = rail => railToggle("sb", "sidebar", "sb-rail", rail, ["Expand the menu", "Collapse the menu"]);
+const toggleMbRail = rail => railToggle("mb", "mapbar", "mb-rail", rail, ["Expand the list", "Collapse the list"]);
+toggleRail(document.documentElement.dataset.sb === "rail");
+toggleMbRail(document.documentElement.dataset.mb === "rail");
+for (const [v, label, ic] of [["light", "Light", "sun"], ["dark", "Dark", "moon"], ["", "System", "monitor"]]) {
+  const b = document.createElement("button"); b.type = "button"; b.className = "btn"; b.dataset.themeChoice = v;
+  b.innerHTML = `${ico(ic, 14)} ${label}`; b.addEventListener("click", () => setTheme(v)); $("theme-switch").append(b);
+}
+function setTheme(v) {
+  if (v) document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme;
+  try { v ? localStorage.setItem("theme", v) : localStorage.removeItem("theme"); } catch (e) {}
+  document.querySelectorAll("[data-theme-choice]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.themeChoice === v)));
+  draw();
+  if (typeof drawFlows === "function" && ready) drawFlows();
+}
+$("sb-meta").textContent = `${nodes.filter(n => n.g === "opp").length} calls · ${DATA.model}` + (DATA.board !== "data" ? ` · ${DATA.board}` : "");
+
+// ---- state and what each sort means
+const S = { flowShown: 40, sort: "proj", techFirst: "analog", kind: "all", lens: 0, node: null, project: null, closed: false, refs: false, query: "", selected: null, trail: [], shown: 60 };
+const PROJECTS = DATA.projects, LENSES = DATA.lenses;
+const SITE = LENSES[0].nodes, siteIndex = Object.fromEntries(SITE.map((c, i) => [c.id, i]));
+let CATS = LENSES[0].nodes;                        // the nodes of the lens you look through
+const nodeOf = n => n.L[S.lens][0], strengthOf = n => n.L[S.lens][1], orderOf = n => n.L[S.lens][2];
+const catColor = i => CATS[i] && CATS[i].color ? CATS[i].color : css("--accent");
+const projOf = n => n.proj && n.proj[0] >= 0 ? PROJECTS[n.proj[0]] : null;
+const SORTS = {
+  proj: { label: "Like your projects", explain: "Calls that read most like one of your projects come first (bge-m3)." },
+  taste: { label: "Your taste", explain: "Calls close to what you liked or saved come first; close to what you dismissed, later." },
+  tech: { label: "Analog or digital", explain: "Calls about analog practice (print, film, set design, craft) or digital (AI, code, interactive, data). Guide words: top of scripts/embedding_map.py." },
+};
+if (!DATA.tech) delete SORTS.tech;
+const rank = n => S.sort === "tech" && S.techFirst === "digital" ? 1 - n.m.tech : n.m[S.sort];
+const kindLabel = n => n.g === "opp" ? (DATA.types[n.t] || n.t)
+  : { project: "Your project", liked: "Example you liked", disliked: "Example you dismissed", ref: "Studio project" }[n.g];
+const matches = n => !S.query || (n.label + " " + n.sub).toLowerCase().includes(S.query);
+// What passes the filters: the list, the map and the flows all show only this, so their numbers
+// change with the filters. `skip` leaves one filter out: the count on each pill is what you'd get by picking it.
+const passes = (n, skip = "") => matches(n) &&
+  (skip === "node" || S.node === null || nodeOf(n) === S.node) &&
+  (skip === "project" || S.project === null || (n.proj && n.proj[0] === S.project)) && (
+  n.g === "opp" ? (skip === "kind" || S.kind === "all" || n.grp === S.kind) && (S.closed || !n.closed)
+  : n.g === "ref" ? S.refs && S.kind === "all"
+  : (n.g === "liked" || n.g === "disliked") ? S.sort === "taste" && S.kind === "all" : false);
+const inList = n => passes(n);
+const onMap = n => passes(n);
+const nodeCount = ci => nodes.reduce((s, n) => s + (n.g === "opp" && nodeOf(n) === ci && passes(n, "node") && (S.node === null || S.node === ci) ? 1 : 0), 0);
+
+// one clear sentence: why this call sits where it sits
+function why(n) {
+  const p = projOf(n);
+  if (S.sort === "proj" && p) {
+    const c = SITE[siteIndex[n.proj[1]]];
+    return `${pct(n.proj[2])} like <strong>${esc(p.label)}</strong>${c ? " · " + esc(c.label) : ""}`;
+  }
+  if (S.sort === "taste" && n.like) {
+    const o = nodes[n.like[0]], what = o.g === "liked" ? "an example you liked" : "a call you saved";
+    return `Close to “${esc(o.label.length > 40 ? o.label.slice(0, 38) + "…" : o.label)}”, ${what} (${pct(n.like[1])})`;
+  }
+  if (S.sort === "tech") {
+    const left = n.tech >= 0, w = Math.min(50, Math.abs(n.tech) * 400);
+    return `<span class="lean"><i style="${left ? `right:50%;width:${w}%` : `left:50%;width:${w}%`}"></i></span> Leans ${left ? "analog" : "digital"}`;
+  }
+  return "";
+}
+
+// ---- the Map bar: sort, kind, search, more
+function pills(el, options, current, onPick) {
+  el.innerHTML = "";
+  for (const [v, label, n] of options) {
+    const a = document.createElement("a"); a.href = "#"; if (v === current) { a.className = "on"; a.setAttribute("aria-current", "true"); }
+    a.innerHTML = `<span class="g-label">${esc(label)}</span>${n != null ? `<span class="g-n">${n}</span>` : ""}`;
+    a.addEventListener("click", e => { e.preventDefault(); onPick(v); });
+    el.append(a);
+  }
+}
+function renderControls() {
+  pills($("sort"), Object.entries(SORTS).map(([k, s]) => [k, s.label]), S.sort, v => { S.sort = v; refresh(); });
+  $("techside").hidden = S.sort !== "tech";
+  pills($("techside"), [["analog", "Analog first"], ["digital", "Digital first"]], S.techFirst, v => { S.techFirst = v; refresh(); });
+  $("sort-explain").textContent = SORTS[S.sort].explain;
+  const openN = gid => nodes.filter(n => n.g === "opp" && passes(n, "kind") && (gid === "all" || n.grp === gid)).length;
+  pills($("kinds"), [["all", "All", openN("all")], ...DATA.groups.filter(g => openN(g.id) || S.kind === g.id).map(g => [g.id, g.label, openN(g.id)])], S.kind,
+    v => { S.kind = v; refresh(); });
+  pills($("lenspills"), LENSES.map((L, i) => [i, L.label]), S.lens, v => { S.lens = v; S.node = null; CATS = LENSES[v].nodes; layoutLens(); refresh(); });
+  const catN = ci => nodes.filter(n => n.g === "opp" && passes(n, "node") && nodeOf(n) === ci).length;
+  pills($("catpills"), [[null, "All"], ...CATS.map((c, i) => [i, c.label, catN(i)])], S.node, v => { S.node = v; S.project = null; refresh(); });
+  $("catpills").querySelectorAll("a").forEach((a, j) => { if (j && CATS[j - 1].color) a.insertAdjacentHTML("afterbegin", `<span class="kdot" style="background:${CATS[j - 1].color}"></span>`); });
+  const pf = $("projfilter");
+  pf.hidden = S.project === null;
+  if (S.project !== null) { pf.innerHTML = `Only calls closest to <strong>${esc(PROJECTS[S.project].label)}</strong> · <a href="#" id="pf-clear">show all</a>`;
+    $("pf-clear").addEventListener("click", e => { e.preventDefault(); S.project = null; refresh(); }); }
+}
+for (const [label, key, count] of [["Closed and archived calls", "closed", nodes.filter(n => n.g === "opp" && n.closed).length],
+  ["Projects by studios you admire", "refs", nodes.filter(n => n.g === "ref").length]]) {
+  const l = document.createElement("label"); l.className = "check";
+  l.innerHTML = `<input type="checkbox"> ${esc(label)} (${count})`;
+  l.querySelector("input").addEventListener("change", e => { S[key] = e.target.checked; refresh(); });
+  $("show").append(l);
+}
+$("q").addEventListener("input", () => { S.query = $("q").value.trim().toLowerCase(); S.shown = 60; renderList(); draw(); });
+
+// ---- the list: Feed cards, one sentence on why
+function deadline(n) {
+  const [main, when] = n.d ? n.d.deadline : ["", ""];
+  const cls = main === "Closed" ? "closed" : /^(\d+) day/.test(main) && +main.split(" ")[0] <= 14 ? "soon" : "";
+  return `<div class="deadline ${cls}"><strong class="with-icon">${ico("clock", 14)}${esc(main)}</strong>${when ? `<span>${esc(when)}</span>` : ""}</div>`;
+}
+function card(n, pos, sim) {
+  const art = document.createElement("article");
+  art.className = "card row" + (n === S.selected ? " on" : ""); art.tabIndex = 0;
+  const type = n.g === "opp" ? `<span class="chip type">${ico(DATA.type_icons[n.t] || "circle-dot", 14)} ${esc(DATA.types[n.t] || n.t)}</span>`
+    : `<span class="chip type">${esc(kindLabel(n))}</span>`;
+  const chips = [type, n.status ? `<span class="chip">${esc(n.status.replace("_", " ").replace(/^./, c => c.toUpperCase()))}</span>` : "",
+    n.closed ? `<span class="chip closed">Closed</span>` : "", n.fav ? `<span class="chip">${ico("star", 14)} Saved</span>` : "",
+    n.brief ? `<span class="chip">${ico("file-text", 14)} Brief</span>` : "", n.note && n.g === "opp" ? `<span class="chip">${ico("file-text", 14)} Note</span>` : ""].join("");
+  const line = sim != null ? `${pct(sim)} alike` : why(n);
+  art.innerHTML = `
+    <div class="what">
+      <h3>${esc(n.label)}</h3>
+      ${n.sub || n.place ? `<div class="org">${esc(n.sub)}${n.place && n.place !== "Location unclear" ? ` · <span class="with-icon">${ico("map-pin", 14)}${esc(n.place)}</span>` : ""}</div>` : ""}
+      ${line ? `<div class="why">${pos != null ? `<span class="pos">#${pos}</span>` : ""}<span>${line}</span></div>` : ""}
+      <div class="chips">${chips}</div>
+    </div>
+    <div class="when">${n.g === "opp" ? deadline(n) : "<span></span>"}
+      <div class="keep">${n.score != null ? `<span class="score" title="Match score">${n.score}</span>` : ""}</div></div>`;
+  const go = () => { open(n); };
+  art.addEventListener("click", go);
+  art.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
+  return art;
+}
+let listed = [];
+function renderList() {
+  listed = nodes.filter(inList).sort((a, b) => rank(b) - rank(a));
+  const shown = listed.slice(0, S.shown);
+  $("count").textContent = `${listed.length} ${listed.length === 1 ? "result" : "results"} · ${SORTS[S.sort].label.toLowerCase()} first`;
+  const box = $("cards"); box.innerHTML = "";
+  if (!listed.length) box.innerHTML = `<div class="empty">${DATA.oppo_empty}<p>Nothing here with these filters.</p></div>`;
+  shown.forEach((n, j) => box.append(card(n, j + 1)));
+  $("more").hidden = listed.length <= S.shown;
+  $("more").textContent = `Show ${Math.min(60, listed.length - S.shown)} more`;
+}
+$("more").addEventListener("click", () => { S.shown += 60; renderList(); });
+function refresh() { S.shown = 60; renderControls(); renderList(); draw(); if (S.selected) renderDetail(S.selected); }
+
+// ---- an opened call: everything about it
+function section(title, body) { return body ? `<div class="dt-sec"><h3>${esc(title)}</h3>${body}</div>` : ""; }
+const ul = items => items && items.length ? `<ul>${items.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
+function renderDetail(n) {
+  const d = n.d || {}, el = $("detail");
+  const facts = [["Deadline", d.deadline ? d.deadline.filter(Boolean).join(" · ") : ""], ["Money", d.money], ["Where", d.place],
+    ["Starts", d.start], ["Duration", d.duration], ["Languages", d.langs], ["Field", d.field], ["How to apply", d.how]].filter(([, v]) => v);
+  const p = projOf(n), pc = n.proj ? SITE[siteIndex[n.proj[1]]] : null, l = n.like ? nodes[n.like[0]] : null;
+  const close = [
+    p ? `${pct(n.proj[2])} like your project <strong>${esc(p.label)}</strong>${pc ? " (" + esc(pc.label) + ")" : ""}; closer than ${pct(n.m.proj)} of the calls.` : "",
+    `On the map: ${LENSES.map((L, li) => `${esc(L.label.toLowerCase())} <strong>${esc(L.nodes[n.L[li][0]].label)}</strong>`).join(" · ")}.`,
+    l ? `Closest to your taste: “${esc(l.label)}”, ${l.g === "liked" ? "an example you liked" : "a call you saved"} (${pct(n.like[1])} alike).` : "",
+    DATA.tech ? `Leans ${n.tech >= 0 ? "analog" : "digital"}: more ${n.tech >= 0 ? "analog" : "digital"} than ${pct(n.tech >= 0 ? n.m.tech : 1 - n.m.tech)} of the calls.` : ""
+  ].filter(Boolean);
+  el.innerHTML = `
+    <h2>${esc(n.label)}</h2>
+    <div class="org">${esc([kindLabel(n), n.sub].filter(Boolean).join(" · "))}</div>
+    <div class="chips">${n.score != null ? `<span class="score" title="Match score">${n.score}</span>` : ""}
+      ${d.elig_flag === "likely_ineligible" ? `<span class="chip bad">Likely ineligible</span>` : d.elig_flag === "check" ? `<span class="chip warn">Check eligibility</span>` : ""}
+      ${n.status ? `<span class="chip">${esc(n.status.replace("_", " "))}</span>` : ""}${n.fav ? `<span class="chip">${ico("star", 14)} Saved</span>` : ""}
+      ${n.closed ? `<span class="chip closed">Closed</span>` : ""}${n.brief ? `<span class="chip">${ico("file-text", 14)} Brief ready</span>` : ""}</div>
+    <div class="links">
+      ${n.g === "opp" ? `<a class="btn primary" href="${APP}/o/${n.id}" target="_blank">Open in Oppo ${ico("arrow-right", 14)}</a>` : ""}
+      ${n.url ? `<a class="btn" href="${esc(n.url)}" target="_blank" rel="noopener">Open the call ${ico("external-link", 14)}</a>` : ""}
+    </div>
+    ${n.note ? section(n.g === "opp" ? "Your note" : "Why", `<div class="note-box">${esc(n.note)}</div>`) : ""}
+    ${section("Summary", d.summary ? `<p>${esc(d.summary)}</p>` : "")}
+    ${facts.length ? `<div class="dt-sec"><dl class="dt-facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl></div>` : ""}
+    ${section("Why it fits", ul(d.reasons))}
+    ${section("Projects to present", d.projects && d.projects.length ? ul(d.projects.map(x => `${x.label} · ${x.cat.replace("-", " ")}${x.why ? ": " + x.why : ""}`)) : "")}
+    ${section("Eligibility", ul(d.elig))}
+    ${section("What to send", ul(d.docs))}
+    ${section("Other dates", ul(d.dates))}
+    ${d.flags && d.flags.length ? `<div class="dt-sec"><h3>Watch out</h3><ul>${d.flags.map(x => `<li class="flag">${esc(x)}</li>`).join("")}</ul></div>` : ""}
+    ${section("How close it is to you", close.length ? `<ul>${close.map(x => `<li>${x}</li>`).join("")}</ul>` : "")}
+    <div class="dt-sec"><h3>Most alike</h3><div class="cards list" id="alike"></div></div>`;
+  const alike = $("alike");
+  n.nb.map(([j, s]) => [nodes[j], s]).filter(([o]) => onMap(o) && o.g !== "project").slice(0, 8).forEach(([o, s]) => alike.append(card(o, null, s)));
+}
+function open(n, addToTrail = true) {
+  if (n.g === "project") return;
+  S.selected = n;
+  if (addToTrail && S.trail.at(-1) !== n.i) S.trail = S.trail.filter(i => i !== n.i).concat(n.i).slice(-30);
+  renderTrail(); renderDetail(n);
+  $("view-list").hidden = true; $("view-detail").hidden = false;
+  if (VIEW === "flows") {
+    $("drawer").hidden = false; $("drawer").scrollTop = 0; markFlowCall(); return;
+  }
+  $("mapbar").scrollTop = 0;
+  if (document.documentElement.dataset.mb === "rail") toggleMbRail(false);
+  centerOn(n); draw();
+}
+function closeDrawer() { $("drawer").hidden = true; S.selected = null; $("view-detail").hidden = true; $("view-list").hidden = false; markFlowCall(); }
+$("drawer-close").addEventListener("click", closeDrawer);
+$("back").addEventListener("click", () => {
+  S.selected = null; $("view-detail").hidden = true; $("view-list").hidden = false; renderList(); draw();
+});
+
+// ---- the map: your projects at the centre, the website's categories around them, the calls outside
+const canvas = $("c"), ctx = canvas.getContext("2d");
+let W = 0, H = 0, transform = d3.zoomIdentity, hover = null, ready = false;
+const RP = 380, RC = 760, RN = 850, RF = 1480;   // projects, categories, nearest calls, farthest calls (map units)
+// each node of the lens gets a slice of the circle that grows with its calls; your projects lean towards their nodes
+function layoutLens() {
+  const L = LENSES[S.lens];
+  const w = CATS.map(c => Math.max(6, c.n) ** 0.7), gap = 0.05, tot = w.reduce((a, b) => a + b, 0);
+  let a = -Math.PI / 2;
+  CATS.forEach((c, i) => { const span = w[i] / tot * (2 * Math.PI - gap * CATS.length); c.a0 = a + gap / 2; c.a1 = c.a0 + span; c.a = (c.a0 + c.a1) / 2;
+    c.x = Math.cos(c.a) * RC; c.y = Math.sin(c.a) * RC; a += span + gap; });
+  PROJECTS.forEach((p, k) => {
+    p.links = L.plinks.filter(l => l[0] === k).map(l => [l[1], l[2]]);   // [node, weight]
+    p.ci = p.links.map(l => l[0]);
+    const sx = p.links.reduce((s, [i, wt]) => s + wt * Math.cos(CATS[i].a), 0), sy = p.links.reduce((s, [i, wt]) => s + wt * Math.sin(CATS[i].a), 0);
+    p.a = p.links.length ? Math.atan2(sy, sx) : k;
+  });
+  const sorted = [...PROJECTS].sort((a, b) => a.a - b.a), gapP = Math.min(0.62, 2 * Math.PI / Math.max(1, sorted.length) * 0.92);
+  for (let it = 0; it < 80; it++) for (let j = 0; j < sorted.length; j++) {
+    const a = sorted[j], b = sorted[(j + 1) % sorted.length];
+    let d = b.a - a.a; if (j === sorted.length - 1) d += 2 * Math.PI;
+    if (d < gapP) { const push = (gapP - d) / 2; a.a -= push; b.a += push; }
+  }
+  PROJECTS.forEach(p => { p.x = Math.cos(p.a) * RP; p.y = Math.sin(p.a) * RP; });
+}
+layoutLens();
+// a call: in its node's slice, beside alike calls; the more it is about the node, the closer to it
+const target = n => {
+  const c = CATS[nodeOf(n)], a = c.a0 + (c.a1 - c.a0) * (0.04 + 0.92 * orderOf(n)), r = RN + (1 - strengthOf(n)) * (RF - RN);
+  return [Math.cos(a) * r, Math.sin(a) * r];
+};
+nodes.forEach(n => { [n.x, n.y] = target(n); });
+function relayout() {
+  const from = nodes.map(n => [n.x, n.y]), to = nodes.map(target);
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const t0 = performance.now();
+  (function step(now) {
+    const e = reduce ? 1 : d3.easeCubicInOut(Math.min(1, (now - t0) / 650));
+    nodes.forEach((n, i) => { n.x = from[i][0] + (to[i][0] - from[i][0]) * e; n.y = from[i][1] + (to[i][1] - from[i][1]) * e; });
+    draw(); if (e < 1) requestAnimationFrame(step);
+  })(t0);
+}
+function resize() {
+  const r = canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  if (!r.width) return;
+  W = r.width; H = r.height; canvas.width = W * dpr; canvas.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); draw();
+}
+function draw() {
+  if (!W || !ready) return;
+  const k = transform.k, px = v => v / k;
+  const text = (t, x, y, size, weight, col, align = "center", font = "Instrument Sans") => {
+    ctx.font = `${weight} ${px(size)}px "${font}", system-ui`; ctx.fillStyle = col; ctx.textAlign = align; ctx.textBaseline = "middle"; ctx.fillText(t, x, y);
+  };
+  ctx.save(); ctx.clearRect(0, 0, W, H); ctx.translate(transform.x, transform.y); ctx.scale(k, k);
+  const ink = css("--ink-rgb"), muted = css("--muted"), strong = css("--strong"), accent = css("--accent"), bg = css("--bg");
+  const r = px(3), sel = S.selected, nb = sel ? new Set(sel.nb.map(([j]) => j)) : null;
+  const catOn = i => S.node === null || S.node === i, projOn = j => S.project === null || S.project === j;
+
+  // threads from each call to its category: faint, in the category's colour; the lit calls a little stronger
+  ctx.lineWidth = px(1);
+  for (const n of nodes) {
+    if (!onMap(n) || !inList(n) || (sel && n !== sel)) continue;
+    const c = CATS[nodeOf(n)];
+    ctx.strokeStyle = catColor(nodeOf(n)); ctx.globalAlpha = rank(n) >= TOP ? 0.28 : 0.07;
+    ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(n.x, n.y); ctx.stroke();
+  }
+  // links from your projects to their categories
+  PROJECTS.forEach((p, j) => p.links.forEach(([i, wt]) => {
+    ctx.strokeStyle = catColor(i); ctx.globalAlpha = (catOn(i) && projOn(j) ? 0.75 : 0.15) * (0.4 + 0.6 * wt); ctx.lineWidth = px(1 + 2 * wt);
+    ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(CATS[i].x, CATS[i].y); ctx.stroke();
+  }));
+  ctx.globalAlpha = 1;
+  // the open call: its thread to the category, then to the project it reads most like; lines to its most alike
+  if (sel) {
+    const c = CATS[nodeOf(sel)], p = projOf(sel);
+    ctx.strokeStyle = strong; ctx.lineWidth = px(2.5);
+    ctx.beginPath(); ctx.moveTo(sel.x, sel.y); ctx.lineTo(c.x, c.y); if (p) ctx.lineTo(p.x, p.y); ctx.stroke();
+    ctx.strokeStyle = `rgb(${ink} / 0.35)`; ctx.lineWidth = px(1);
+    for (const [j] of sel.nb) { const o = nodes[j]; if (!onMap(o)) continue; ctx.beginPath(); ctx.moveTo(sel.x, sel.y); ctx.lineTo(o.x, o.y); ctx.stroke(); }
+  }
+  // the path you walked
+  const trail = S.trail.map(i => nodes[i]);
+  if (trail.length > 1) {
+    ctx.strokeStyle = accent; ctx.lineWidth = px(2); ctx.setLineDash([px(6), px(5)]);
+    ctx.beginPath(); trail.forEach((n, j) => j ? ctx.lineTo(n.x, n.y) : ctx.moveTo(n.x, n.y)); ctx.stroke(); ctx.setLineDash([]);
+  }
+  // the calls: all the same size; grey, or their category's colour when in the top 15% of the sort
+  for (const n of nodes) {
+    if (!onMap(n)) continue;
+    const lit = !sel || n === sel || nb.has(n.i), top = rank(n) >= TOP;
+    ctx.globalAlpha = lit ? 1 : 0.18;
+    ctx.fillStyle = n.g === "liked" ? css("--oppo") : n.g === "disliked" ? css("--bad") : top && lit ? catColor(nodeOf(n)) : `rgb(${ink} / ${lit ? 0.3 : 0.5})`;
+    ctx.beginPath();
+    if (n.g === "liked" || n.g === "disliked") { ctx.moveTo(n.x, n.y - r * 1.6); ctx.lineTo(n.x + r * 1.6, n.y); ctx.lineTo(n.x, n.y + r * 1.6); ctx.lineTo(n.x - r * 1.6, n.y); ctx.closePath(); }
+    else ctx.arc(n.x, n.y, n.g === "ref" ? r * 0.7 : r, 0, 2 * Math.PI);
+    ctx.fill();
+    if (n.fav || n.status) { ctx.lineWidth = px(1.5); ctx.strokeStyle = strong; ctx.stroke(); }
+  }
+  ctx.globalAlpha = 1;
+  if (sel) { ctx.strokeStyle = strong; ctx.lineWidth = px(2); ctx.beginPath(); ctx.arc(sel.x, sel.y, r * 2.4, 0, 2 * Math.PI); ctx.stroke(); }
+  // the categories: nodes in their colour, with their name and number of calls
+  CATS.forEach((c, i) => {
+    const shown = nodeCount(i), rr = px(9) + 8 * Math.sqrt(shown) / 6;
+    ctx.globalAlpha = catOn(i) ? 1 : 0.35;
+    ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(c.x, c.y, rr + px(3), 0, 2 * Math.PI); ctx.fill();
+    ctx.fillStyle = catColor(i); ctx.beginPath(); ctx.arc(c.x, c.y, rr, 0, 2 * Math.PI); ctx.fill();
+    const out = Math.cos(c.a) >= 0, lx = c.x + (out ? 1 : -1) * (rr + px(8));
+    text(c.label, lx, c.y - px(8), 15, 600, strong, out ? "left" : "right", "Bricolage Grotesque");
+    text(`${shown} call${shown === 1 ? "" : "s"}`, lx, c.y + px(10), 12, 400, muted, out ? "left" : "right");
+    ctx.globalAlpha = 1;
+  });
+  // your projects at the centre: black diamonds with their names
+  ctx.fillStyle = `rgb(${ink} / 0.05)`; ctx.beginPath(); ctx.arc(0, 0, RP + 50, 0, 2 * Math.PI); ctx.fill();
+  text("Your projects", 0, -RP - 50 + px(14), 13, 600, muted, "center");
+  PROJECTS.forEach((p, j) => {
+    const rr = px(7); ctx.globalAlpha = projOn(j) ? 1 : 0.35;
+    ctx.fillStyle = strong; ctx.beginPath(); ctx.moveTo(p.x, p.y - rr); ctx.lineTo(p.x + rr, p.y); ctx.lineTo(p.x, p.y + rr); ctx.lineTo(p.x - rr, p.y); ctx.closePath(); ctx.fill();
+    // the name towards the inside of the ring, where there is room
+    const right = Math.cos(p.a) >= 0;
+    text(p.label.length > 26 ? p.label.slice(0, 24) + "…" : p.label, p.x + (right ? -1 : 1) * px(12), p.y, 12, 600, strong, right ? "right" : "left");
+    ctx.globalAlpha = 1;
+  });
+  // names of the open call and its most alike; more names when zoomed in
+  const lab = (n, w, col) => text(n.label.length > 46 ? n.label.slice(0, 44) + "…" : n.label, n.x + px(8), n.y, 12, w, col, "left");
+  if (sel) { sel.nb.forEach(([j]) => onMap(nodes[j]) && lab(nodes[j], 400, muted)); lab(sel, 600, strong); }
+  else if (k > 2.2) {
+    const [x0, y0] = transform.invert([0, 0]), [x1, y1] = transform.invert([W, H]);
+    let shown = 0;
+    for (const n of nodes) if (onMap(n) && inList(n) && n.x > x0 && n.x < x1 && n.y > y0 && n.y < y1 && shown++ < 120) lab(n, 400, muted);
+  }
+  ctx.restore();
+}
+function renderKey() {
+  $("key").innerHTML = CATS.map(c => `<span class="key"><span class="kdot" style="background:${c.color || "var(--accent)"}"></span>${esc(c.label)}</span>`).join("") +
+    `<span class="key"><span class="kdot" style="background:rgb(var(--ink-rgb) / .3)"></span>Other calls</span>
+     <span class="key">Closer to a node = more about it · coloured = top 15% for “${esc(SORTS[S.sort].label.toLowerCase())}”</span>`;
+}
+const zoom = d3.zoom().scaleExtent([0.1, 40]).on("zoom", e => { transform = e.transform; draw(); });
+d3.select(canvas).call(zoom).on("dblclick.zoom", null);
+function fit() {
+  const R = RF + 60, k = Math.min(W / (2 * R + 360), H / (2 * R));
+  d3.select(canvas).transition().duration(500).call(zoom.transform, d3.zoomIdentity.translate(W / 2, H / 2).scale(k));
+}
+function centerOn(n) {
+  const k = Math.max(transform.k, 1.4);
+  d3.select(canvas).transition().duration(500).call(zoom.transform, d3.zoomIdentity.translate(W / 2 - k * n.x, H / 2 - k * n.y).scale(k));
+}
+$("fit").addEventListener("click", fit);
+// what is under the pointer: a project, a category, or a call
+function hit(mx, my) {
+  const [x, y] = transform.invert([mx, my]), d2 = (a, b) => (a.x - x) ** 2 + (a.y - y) ** 2;
+  const pj = PROJECTS.findIndex(p => d2(p) < (12 / transform.k) ** 2);
+  if (pj >= 0) return { project: pj };
+  const ci = CATS.findIndex((c, i) => d2(c) < ((14 / transform.k) + 8 * Math.sqrt(nodeCount(i)) / 6) ** 2);
+  if (ci >= 0) return { cat: ci };
+  let best = null, bd = (9 / transform.k) ** 2;
+  for (const n of nodes) { if (!onMap(n)) continue; const d = d2(n); if (d < bd) { bd = d; best = n; } }
+  return best ? { node: best } : null;
+}
+const tip = $("tip");
+canvas.addEventListener("mousemove", e => {
+  const b = canvas.getBoundingClientRect(), mx = e.clientX - b.left, my = e.clientY - b.top, h = hit(mx, my);
+  canvas.style.cursor = h ? "pointer" : "";
+  const key = h ? (h.node ? "n" + h.node.i : h.cat != null ? "c" + h.cat : "p" + h.project) : null;
+  if (key === hover) return; hover = key;
+  if (!h) { tip.hidden = true; return; }
+  let title, line;
+  if (h.node) { title = h.node.label; line = [kindLabel(h.node), h.node.sub].filter(Boolean).join(" · "); }
+  else if (h.cat != null) { title = CATS[h.cat].label; line = `${LENSES[S.lens].label}: ${nodeCount(h.cat)} of the calls shown hang from it · click to keep only these`; }
+  else { const p = PROJECTS[h.project]; title = p.label; line = p.ci.map(i => CATS[i].label).join(" · ") + " · click for its closest calls"; }
+  tip.innerHTML = `<strong>${esc(title)}</strong><span class="muted">${esc(line)}</span>`;
+  tip.style.left = Math.min(mx + 16, W - 350) + "px"; tip.style.top = (my + 16) + "px"; tip.hidden = false;
+});
+canvas.addEventListener("mouseleave", () => { tip.hidden = true; hover = null; });
+canvas.addEventListener("click", e => {
+  const b = canvas.getBoundingClientRect(), h = hit(e.clientX - b.left, e.clientY - b.top);
+  if (!h) return;
+  if (h.node) { open(h.node); if (matchMedia("(max-width: 900px)").matches) toggleMapbar(true); return; }
+  // a category or a project filters the list (click again to undo)
+  if (h.cat != null) { S.node = S.node === h.cat ? null : h.cat; S.project = null; }
+  else { S.project = S.project === h.project ? null : h.project; S.node = null; }
+  S.flowShown = 40; $("drawer").hidden = true;
+  S.selected = null; $("view-detail").hidden = true; $("view-list").hidden = false;
+  refresh();
+});
+
+// ---- path and collections (kept in this browser)
+function renderTrail() {
+  const ol = $("trail"); ol.innerHTML = "";
+  for (const i of S.trail) {
+    const n = nodes[i], li = document.createElement("li"), b = document.createElement("button");
+    b.type = "button"; b.className = S.selected === n ? "on" : ""; b.title = n.label;
+    b.innerHTML = `<span class="sb-title">${esc(n.label)}</span>`;
+    b.addEventListener("click", () => open(n, false));
+    li.append(b); ol.append(li);
+  }
+  const any = S.trail.length > 0;
+  $("trail-empty").hidden = any; $("save-row").hidden = !any; $("trail-clear").hidden = !any;
+}
+$("trail-clear").addEventListener("click", () => { S.trail = []; renderTrail(); draw(); });
+const KEY = "oppo-map-collections-" + DATA.board;
+const refOf = n => n.g === "opp" ? { g: "opp", id: n.id } : { g: n.g, label: n.label, sub: n.sub };
+const find = r => nodes.find(n => r.g === "opp" ? n.g === "opp" && n.id === r.id : n.g === r.g && n.label === r.label && n.sub === r.sub);
+function loadColls() { try { return JSON.parse(localStorage.getItem(KEY) || "[]"); } catch (e) { return []; } }
+function saveColls(c) { try { localStorage.setItem(KEY, JSON.stringify(c)); } catch (e) {} renderColls(); }
+function renderColls() {
+  const colls = loadColls(), ulEl = $("colls"); ulEl.innerHTML = "";
+  $("colls-box").hidden = !colls.length;
+  colls.forEach((c, ci) => {
+    const li = document.createElement("li"), b = document.createElement("button"), del = document.createElement("button");
+    li.className = "coll"; b.type = "button";
+    b.innerHTML = `<span class="sb-title">${esc(c.name)}</span><span class="count" style="margin-left:auto">${c.items.length}</span>`;
+    b.addEventListener("click", () => { S.trail = c.items.map(find).filter(Boolean).map(n => n.i); if (S.trail.length) open(nodes[S.trail[0]], false); else { renderTrail(); draw(); } });
+    del.type = "button"; del.className = "btn ghost"; del.innerHTML = ico("trash-2", 16); del.setAttribute("aria-label", "Delete the collection " + c.name);
+    del.addEventListener("click", () => { const all = loadColls(); all.splice(ci, 1); saveColls(all); });
+    li.append(b, del); ulEl.append(li);
+  });
+}
+$("coll-save").addEventListener("click", () => {
+  const name = $("coll-name").value.trim() || `Path of ${new Date().toLocaleDateString("en-GB")}`;
+  saveColls(loadColls().concat({ name, items: S.trail.map(i => refOf(nodes[i])) })); $("coll-name").value = "";
+});
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  if (document.body.classList.contains("sb-open")) return toggleSidebar(false);
+  if (document.body.classList.contains("mb-open")) return toggleMapbar(false);
+  if (S.selected && document.activeElement !== $("q")) $("back").click();
+});
+
+// ---- the flows view: your projects → the nodes of the lens → the kinds of call
+// Each call is one unit of flow: from the project it reads most like, through the
+// lens node it is most about, to its kind (the Feed's groups). Widths = numbers of calls.
+let VIEW = "map";
+try { if (localStorage.getItem("mapview") === "flows") VIEW = "flows"; } catch (e) {}
+function drawFlows() {
+  const svg = d3.select("#flows"), box = $("flows").getBoundingClientRect();
+  svg.selectAll("*").remove();
+  if (VIEW !== "flows" || !box.width || !d3.sankey) return;
+  // only the calls that pass the filters: picking a kind, node or project narrows the flows to it
+  const calls = nodes.filter(n => n.g === "opp" && passes(n) && n.proj && n.proj[0] >= 0);
+  if (!calls.length) {
+    $("fl-calls").innerHTML = ""; svg.attr("height", 300); $("fl-body").style.height = "300px"; renderFlowFilters();
+    svg.append("text").attr("x", box.width / 2).attr("y", 120).attr("text-anchor", "middle").attr("class", "fl-col")
+      .text("No calls with these filters");
+    return;
+  }
+  const groups = DATA.groups.filter(gr => calls.some(n => n.grp === gr.id));
+  const P = PROJECTS.map((p, k) => ({ id: "p" + k, col: 0, label: p.label, k }));
+  const M = CATS.map((c, i) => ({ id: "m" + i, col: 1, label: c.label, i, color: c.color }));
+  const G = groups.map(gr => ({ id: "g" + gr.id, col: 2, label: gr.label, gid: gr.id }));
+  const count = new Map(), add = (a, b, n) => { const key = a + ">" + b; const e = count.get(key) || { source: a, target: b, value: 0, calls: [] }; e.value++; e.calls.push(n); count.set(key, e); };
+  for (const n of calls) { add("p" + n.proj[0], "m" + nodeOf(n), n); add("m" + nodeOf(n), "g" + n.grp, n); }
+  const used = new Set([...count.values()].flatMap(l => [l.source, l.target]));
+  const graphNodes = [...P, ...M, ...G].filter(d => used.has(d.id));
+  const listed = calls.slice().sort((a, b) => rank(b) - rank(a)), shownCalls = listed.slice(0, S.flowShown);
+  const ROW = 54, top = 64, bottom = 48, left = 24, view = $("flowsview").clientHeight - $("fl-bar").offsetHeight;
+  const W = box.width, H = Math.max(420, view), listX = Math.round(W * 0.64), listW = W - listX - 24;
+  const fullH = Math.max(H, top + shownCalls.length * ROW + (listed.length > shownCalls.length ? 64 : 24));
+  svg.attr("height", fullH); $("fl-body").style.height = fullH + "px";
+  const { nodes: sn, links: sl } = d3.sankey().nodeId(d => d.id).nodeAlign(d => d.col).nodeWidth(14).nodePadding(14)
+    .nodeSort((a, b) => a.col === 1 && b.col === 1 ? a.i - b.i : undefined)
+    .extent([[left + 170, top], [listX - 210, H - bottom]])({ nodes: graphNodes.map(d => ({ ...d })), links: [...count.values()].map(l => ({ ...l })) });
+  const strong = css("--strong"), muted = `rgb(${css("--ink-rgb")} / .35)`;
+  const colorOf = d => d.col === 1 ? (d.color || css("--accent")) : d.col === 0 ? strong : muted;
+  const on = d => d.col === 0 ? (S.project === null || S.project === d.k) : d.col === 1 ? (S.node === null || S.node === d.i) : (S.kind === "all" || S.kind === d.gid);
+  const linkOn = l => on(l.source) && on(l.target);
+  // column titles
+  const colX = c => d3.mean(sn.filter(d => d.col === c), d => d.x0) ?? 0;
+  const cols = [["Your projects", colX(0) + 14, "end"], [LENSES[S.lens].label, colX(1), "start"], ["Kind of call", colX(2), "start"],
+    [`The calls · ${listed.length}${listed.length > shownCalls.length ? `, first ${shownCalls.length} by “${SORTS[S.sort].label.toLowerCase()}”` : ""}`, listX + 12, "start"]];
+  svg.selectAll(".fl-col").data(cols).join("text").attr("class", "fl-col").attr("x", d => d[1]).attr("y", top - 24)
+    .attr("text-anchor", d => d[2]).text(d => d[0]);
+  // flows, in the colour of the node they pass through
+  const link = svg.append("g").selectAll("path").data(sl).join("path").attr("class", "fl-link")
+    .attr("d", d3.sankeyLinkHorizontal()).attr("stroke", d => colorOf(d.source.col === 1 ? d.source : d.target))
+    .attr("stroke-width", d => Math.max(1, d.width)).attr("stroke-opacity", 0.42);
+  link.append("title").text(d => `${d.source.label} → ${d.target.label}: ${d.value} call${d.value === 1 ? "" : "s"}`);
+  link.on("mouseenter", function () { d3.select(this).attr("stroke-opacity", 0.75); })
+      .on("mouseleave", function () { d3.select(this).attr("stroke-opacity", 0.42); })
+      .on("click", (e, d) => pickFlow(d.source, d.target));
+  // blocks with their names and counts
+  const node = svg.append("g").selectAll("g").data(sn).join("g").attr("class", "fl-node");
+  node.append("rect").attr("x", d => d.x0).attr("y", d => d.y0).attr("width", d => d.x1 - d.x0).attr("height", d => Math.max(2, d.y1 - d.y0))
+    .attr("rx", 3).attr("fill", colorOf).attr("opacity", d => on(d) ? 1 : 0.3)
+    .on("click", (e, d) => pickFlow(d)).append("title").text(d => `${d.label}: ${d.value} calls`);
+  const lab = node.append("text").attr("x", d => d.col === 0 ? d.x0 - 10 : d.x1 + 10).attr("y", d => (d.y0 + d.y1) / 2)
+    .attr("text-anchor", d => d.col === 0 ? "end" : "start").attr("dominant-baseline", "middle").attr("opacity", d => on(d) ? 1 : 0.4)
+    .style("cursor", "pointer").on("click", (e, d) => pickFlow(d));
+  lab.append("tspan").attr("class", "fl-name").text(d => d.label);
+  lab.append("tspan").attr("class", "fl-n").attr("dx", 6).text(d => d.value);
+
+  // the last column: the calls themselves, each with a thread from its kind, in the colour of its node
+  const kindNode = Object.fromEntries(sn.filter(d => d.col === 2).map(d => [d.gid, d]));
+  const perKind = {};
+  shownCalls.forEach(n => { (perKind[n.grp] = perKind[n.grp] || []).push(n); });
+  const threads = svg.append("g").attr("class", "fl-threads").lower();  // behind the flows and blocks
+  shownCalls.forEach((n, j) => {
+    const k = kindNode[n.grp]; if (!k) return;
+    const mine = perKind[n.grp], m = mine.indexOf(n);
+    const y0 = k.y0 + (m + 0.5) / mine.length * (k.y1 - k.y0), y1 = top + j * ROW + ROW / 2, x0 = k.x1 + 150, x1 = listX + 4;
+    threads.append("path").attr("class", "fl-thread").attr("data-i", n.i)
+      .attr("d", `M${k.x1},${y0} L${x0},${y0} C${(x0 + x1) / 2},${y0} ${(x0 + x1) / 2},${y1} ${x1},${y1}`)
+      .attr("fill", "none").attr("stroke", catColor(nodeOf(n))).attr("stroke-width", 1.5).attr("stroke-opacity", 0.35);
+  });
+  const ol = $("fl-calls"); ol.innerHTML = "";
+  ol.style.left = listX + "px"; ol.style.width = listW + "px";
+  shownCalls.forEach((n, j) => {
+    const li = document.createElement("li"); li.style.top = (top + j * ROW + 2) + "px";
+    const b = document.createElement("button"); b.className = "fl-call" + (n === S.selected ? " on" : ""); b.type = "button"; b.dataset.i = n.i;
+    const [dlMain] = n.d ? n.d.deadline : [""];
+    b.innerHTML = `<span class="dot" style="background:${catColor(nodeOf(n))}"></span><span class="t">${esc(n.label)}</span>
+      <span class="s">${esc([n.sub, dlMain, n.place && n.place !== "Location unclear" ? n.place : ""].filter(Boolean).join(" · "))}</span>
+      ${n.score != null ? `<span class="score" title="Match score">${n.score}</span>` : ""}`;
+    b.addEventListener("click", () => open(n));
+    b.addEventListener("mouseenter", () => svg.selectAll(`.fl-thread[data-i="${n.i}"]`).attr("stroke-opacity", 0.9).attr("stroke-width", 2.5));
+    b.addEventListener("mouseleave", () => svg.selectAll(`.fl-thread[data-i="${n.i}"]`).attr("stroke-opacity", 0.35).attr("stroke-width", 1.5));
+    li.append(b); ol.append(li);
+  });
+  if (listed.length > shownCalls.length) {
+    const li = document.createElement("li"); li.className = "fl-more"; li.style.top = (top + shownCalls.length * ROW + 12) + "px";
+    li.innerHTML = `<button class="btn" type="button">Show ${Math.min(40, listed.length - shownCalls.length)} more</button>`;
+    li.querySelector("button").addEventListener("click", () => { S.flowShown += 40; drawFlows(); });
+    ol.append(li);
+  }
+  renderFlowFilters();
+}
+function markFlowCall() {
+  document.querySelectorAll(".fl-call").forEach(b => b.classList.toggle("on", S.selected && +b.dataset.i === S.selected.i));
+}
+// the filters picked in the diagram, each with a × to undo it
+function renderFlowFilters() {
+  const box = $("fl-active"), parts = [];
+  if (S.project !== null) parts.push(["project", PROJECTS[S.project].label]);
+  if (S.node !== null) parts.push(["node", CATS[S.node].label]);
+  if (S.kind !== "all") parts.push(["kind", (DATA.groups.find(g => g.id === S.kind) || {}).label || S.kind]);
+  box.innerHTML = parts.length ? `<span>Showing only:</span>` : "";
+  for (const [key, label] of parts) {
+    const b = document.createElement("button"); b.type = "button"; b.innerHTML = `${esc(label)} ${ico("x", 14)}`;
+    b.setAttribute("aria-label", "Remove the filter " + label);
+    b.addEventListener("click", () => { if (key === "kind") S.kind = "all"; else S[key] = null; refresh(); });
+    box.append(b);
+  }
+}
+// a block or a flow filters the list in the bar (click it again to undo)
+function pickFlow(a, b) {
+  for (const d of [a, b].filter(Boolean)) {
+    if (d.col === 0) S.project = b ? d.k : (S.project === d.k ? null : d.k);
+    if (d.col === 1) S.node = b ? d.i : (S.node === d.i ? null : d.i);
+    if (d.col === 2) S.kind = b ? d.gid : (S.kind === d.gid ? "all" : d.gid);
+  }
+  S.selected = null; $("view-detail").hidden = true; $("view-list").hidden = false;
+  if (document.documentElement.dataset.mb === "rail") toggleMbRail(false);
+  refresh();
+  if (matchMedia("(max-width: 900px)").matches) toggleMapbar(true);
+}
+function setView(v) {
+  VIEW = v;
+  try { localStorage.setItem("mapview", v); } catch (e) {}
+  document.querySelectorAll("[data-view]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.view === v)));
+  const flows = v === "flows";
+  document.body.classList.toggle("flows-on", flows);
+  $("c").hidden = flows; $("key").hidden = flows; $("fit").hidden = flows; $("flowsview").hidden = !flows;
+  $("drawer").hidden = !(flows && S.selected);
+  const bar = $("fl-bar"), list = $("view-list");
+  if (flows) { for (const id of ["sec-lens", "sec-sort", "sec-search"]) bar.insertBefore($(id), $("fl-active")); $("drawer").append($("view-detail")); }
+  else {
+    list.prepend($("sec-sort")); $("sec-sort").after($("sec-kind") || $("kinds").parentElement);
+    $("kinds").parentElement.after($("sec-lens")); $("sec-lens").after($("sec-search"));
+    $("mapbar").append($("view-detail"));
+  }
+  setTimeout(() => { if (flows) drawFlows(); else resize(); }, 0);
+}
+document.querySelectorAll("[data-view]").forEach(b => b.addEventListener("click", () => setView(b.dataset.view)));
+
+// ---- start
+window.addEventListener("resize", () => { resize(); drawFlows(); });
+renderControls(); renderList(); renderTrail(); renderColls(); renderKey(); setTheme(document.documentElement.dataset.theme || "");
+const _refresh = refresh;
+refresh = () => { _refresh(); renderKey(); relayout(); drawFlows(); };
+ready = true; $("status").hidden = true; resize(); fit(); setView(VIEW);
+</script>
+</body>
+</html>

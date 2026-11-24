@@ -106,7 +106,7 @@ num_ctx = 6144
 [fetch]
 min_delay_s = 3.0
 max_delay_s = 5.0
-source_min_interval_h = 12
+source_min_interval_h = 12      # sources go round in a cycle, oldest first; one read less than this ago comes last (after all due ones)
 detail_pages_per_source = 25   # per source, the new pages closest to your work are read first
 max_pages_per_refresh = 150    # all sources together; the rest is read at the next refresh (0 = no limit)
 parallel_downloads = 4         # sites the Downloader agent fetches at once while the Reader reads (one request at a time per site)

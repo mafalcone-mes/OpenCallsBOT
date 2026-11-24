@@ -24,3 +24,6 @@ PLAN_PROMPT.md
 docs/*.json
 docs/*.txt
 docs/*.err
+
+# Logs other programs drop here (e.g. the NVIDIA app)
+debug.log

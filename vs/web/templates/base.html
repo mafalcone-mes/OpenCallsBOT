@@ -9,6 +9,7 @@
   try { const t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
   // The side bar you collapsed to icons on a wide screen, also before the page paints.
   try { if (localStorage.getItem("sidebar") === "rail") document.documentElement.dataset.sb = "rail"; } catch (e) {}
+  {% if dev %}try { if (localStorage.getItem("devbar") === "rail") document.documentElement.dataset.dev = "rail"; } catch (e) {}{% endif %}
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -17,7 +18,7 @@
 <link rel="stylesheet" href="{{ static_url('app.css') }}">
 <script src="{{ static_url('htmx.min.js') }}" defer></script>
 </head>
-<body class="app">
+<body class="app{{ ' dev' if dev }}">
 <a class="skip" href="#content">Skip to content</a>
 
 {# Side bar, as in AI chat apps: the pages, your last chats, and the refresh state. #}
@@ -45,7 +46,7 @@
     <div class="sb-actions">
       {% set r_label = 'Refreshing…' if progress.running else 'Refresh' %}
       <form method="post" action="/refresh"><button class="btn" title="{{ r_label }}" {{ 'disabled' if progress.running }}>{{ icon('refresh-cw') }} <span class="sb-text">{{ r_label }}</span></button></form>
-      {% if progress.running and progress.kind == 'refresh' %}{% set s_label = 'Stopping…' if progress.stopping else 'Stop' %}<form method="post" action="/stop"><button class="btn" title="{{ s_label }}" {{ 'disabled' if progress.stopping }}>{{ icon('circle-stop') }} <span class="sb-text">{{ s_label }}</span></button></form>{% endif %}
+      {% if progress.running and progress.kind in ('refresh', 'score') %}{% set s_label = 'Stopping…' if progress.stopping else 'Stop' %}<form method="post" action="/stop"><button class="btn" title="{{ s_label }}" {{ 'disabled' if progress.stopping }}>{{ icon('circle-stop') }} <span class="sb-text">{{ s_label }}</span></button></form>{% endif %}
     </div>
     <div class="theme-switch" role="group" aria-label="Theme">
       {% for v, label, ic in [('light', 'Light', 'sun'), ('dark', 'Dark', 'moon'), ('', 'System', 'monitor')] %}
@@ -60,6 +61,7 @@
   <header class="mobile-bar">
     <button class="btn" type="button" onclick="toggleSidebar(true)" aria-controls="sidebar" aria-expanded="false" id="sb-open">{{ icon('menu', 18) }} Menu</button>
     <a class="brand" href="/">{{ oppo(size=28) }} Oppo</a>
+    {% if dev %}<button class="btn dev-open-btn" type="button" onclick="toggleDevbar(true)" aria-controls="devbar">{{ icon('terminal', 18) }} Dev</button>{% endif %}
   </header>
   {% if progress.running %}
   <div class="page-progress" hx-get="/progress" hx-trigger="every 3s" hx-swap="innerHTML">{% include "_progress.html" %}</div>
@@ -73,6 +75,7 @@
   {% block main %}{% endblock %}
   </main>
 </div>
+{% if dev %}{% include "_dev_panel.html" %}{% endif %}
 
 <div class="toast" id="toast" role="alert" hidden></div>
 

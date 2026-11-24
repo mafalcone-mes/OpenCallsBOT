@@ -45,6 +45,8 @@ templates.env.globals.update(static_url=static_url)
 from vs.web.icons import icon  # noqa: E402
 from vs.web.oppo import oppo, svg_source  # noqa: E402
 templates.env.globals.update(icon=icon, oppo=oppo)
+from vs import devtools  # noqa: E402
+templates.env.globals.update(dev=devtools.DEV)
 
 STATUSES = present.STATUSES
 DISMISS_REASONS = present.DISMISS_REASONS
@@ -328,16 +330,19 @@ def chat_delete(request: Request, cid: int):
 
 @app.post("/chat/warm")
 def chat_warm():
-    """The Ask page opened: load the chat model while the question is typed.
-    Not during a refresh, whose agents decide what is in video memory."""
-    if not pipeline.progress_state()["running"]:
-        def go():
-            try:
-                llm.warm()
-            except llm.LLMError:
-                pass
-        threading.Thread(target=go, daemon=True).start()
-    return Response(status_code=204)
+    """Home or Ask opened: load the chat model while the question is typed,
+    and check it landed on the GPU (reloading it once if not). Answers with
+    a warning to show when it runs on the CPU, else nothing. Not during a
+    refresh, whose agents decide what is in video memory."""
+    if pipeline.progress_state()["running"]:
+        return Response(status_code=204)
+    try:
+        warning = llm.check_gpu()
+    except llm.LLMError:
+        return Response(status_code=204)
+    if not warning:
+        return HTMLResponse("")
+    return HTMLResponse(f'<p class="gpu-warn" role="alert">{icon("triangle-alert")} {html_escape(warning)}</p>')
 
 
 @app.post("/chat/ask", response_class=HTMLResponse)
@@ -715,12 +720,13 @@ def detail(request: Request, oid: int):
             if not o:
                 raise HTTPException(404)
             rows = [o]
-        brief = db.kv_get(conn, f"brief:{oid}")
         o = rows[0]
         similar = _similar_titles(conn, o)
-    return templates.TemplateResponse(request, "detail.html", ctx(request, o=o, similar=similar, brief=brief, view="detail",
+        extra = _brief_ctx(conn, oid)
+    return templates.TemplateResponse(request, "detail.html", ctx(request, o=o, similar=similar, view="detail",
                                                          statuses=STATUSES, reasons=DISMISS_REASONS,
-                                                         brief_job=_brief_jobs.get(oid)))
+                                                         pf_empty=bool(request.query_params.get("pf_empty")),
+                                                         pf_saved=bool(request.query_params.get("pf_saved")), **extra))
 
 
 @app.get("/studios", response_class=HTMLResponse)
@@ -1018,29 +1024,147 @@ def like(request: Request, oid: int, label: str = Form("interested"), why: str =
     return RedirectResponse(_back(request, f"/o/{oid}"), 303)
 
 
+def _start_brief_job(oid: int, work) -> None:
+    """Run one brief step in the background (one at a time per call)."""
+    job = _brief_jobs.get(oid)
+    if job and job.get("state") == "running":
+        return
+    _brief_jobs[oid] = {"state": "running", "log": []}
+
+    def run():
+        try:
+            res = work(lambda m: _brief_jobs[oid]["log"].append(str(m)))
+            _brief_jobs[oid].update(state="done", result=res)
+        except Exception as e:
+            _brief_jobs[oid].update(state="failed", error=str(e))
+    threading.Thread(target=run, daemon=True).start()
+
+
+def _brief_ctx(conn, oid: int) -> dict:
+    """What the brief section shows: the last brief, the portfolio editor
+    (while you are choosing), the notes form (after you changed the
+    proposal) and the rules learned so far."""
+    from vs import brief as brief_mod
+    from vs import choices
+    draft = db.kv_get(conn, f"brief-draft:{oid}")
+    fb = db.kv_get(conn, f"brief-feedback:{oid}")
+    pf = portfolio_mod.load() if (draft or fb) else None
+    return {
+        "brief": db.kv_get(conn, f"brief:{oid}"), "brief_job": _brief_jobs.get(oid), "levels": choices.LEVELS,
+        "draft_rows": brief_mod.editor_rows(pf, draft["selected"], draft.get("ranked", [])) if draft else None,
+        "feedback": [{**c, "text": choices.describe(c, pf)} for c in fb["changes"]] if fb else None,
+        "portfolio_rules": choices.rules(),
+    }
+
+
 @app.post("/o/{oid}/brief")
 def make_brief(request: Request, oid: int, pdf: int = Form(1), back: str = Form("")):
-    job = _brief_jobs.get(oid)
-    if not job or job.get("state") != "running":
-        _brief_jobs[oid] = {"state": "running", "log": []}
-
-        def run():
-            from vs.brief import generate
-            try:
-                res = generate(oid, make_pdf=bool(pdf), log=lambda m: _brief_jobs[oid]["log"].append(str(m)))
-                _brief_jobs[oid].update(state="done", result=res)
-            except Exception as e:
-                _brief_jobs[oid].update(state="failed", error=str(e))
-        threading.Thread(target=run, daemon=True).start()
+    """With the PDF: Oppo proposes the projects, then you edit them before
+    anything is exported. Brief only: straight through, as before."""
+    from vs import brief as brief_mod
+    if pdf:
+        def work(log):
+            prop = brief_mod.propose(oid, log=log)
+            with db.session() as conn:
+                db.kv_set(conn, f"brief-draft:{oid}", {**prop, "at": db.now()})
+            return prop
+        _start_brief_job(oid, work)
+        return RedirectResponse(f"/o/{oid}#brief", 303)
+    _start_brief_job(oid, lambda log: brief_mod.generate(oid, make_pdf=False, log=log))
     return RedirectResponse("/todo" if back == "/todo" else f"/o/{oid}#brief", 303)
+
+
+@app.post("/o/{oid}/brief/confirm")
+async def confirm_brief(request: Request, oid: int):
+    """Your final portfolio: export it, and ask why you changed the proposal."""
+    from vs import brief as brief_mod
+    from vs import choices
+    form = await request.form()
+    shown = set(form.getlist("show"))
+    final = []
+    for slug in str(form.get("order") or "").split(","):
+        angle = str(form.get(f"angle_{slug}") or "")
+        if slug in shown and angle.split(":", 1)[0] == slug:
+            imp = str(form.get(f"imp_{slug}") or "")
+            final.append({"angle": angle, "importance": imp if imp in choices.LEVELS else "supporting"})
+    if not final:
+        return RedirectResponse(f"/o/{oid}?pf_empty=1#brief", 303)
+    with db.session() as conn:
+        o = db.row_dict(conn.execute("SELECT * FROM opportunity WHERE id=?", (oid,)).fetchone())
+        if not o:
+            raise HTTPException(404)
+        draft = db.kv_get(conn, f"brief-draft:{oid}") or {"selected": []}
+        proposal = [{"angle": s["angle"], "importance": s.get("importance", "supporting")} for s in draft["selected"]]
+        record = {"call_key": o["dedup_key"], "oid": oid, "title": o.get("title_en") or o.get("title_original") or "",
+                  "org": o.get("org_name") or "", "call_text": choices.call_text(o), "proposal": proposal,
+                  "final": [dict(s) for s in final], "changes": choices.diff(proposal, final), "at": db.now()}
+        if record["changes"]:
+            db.kv_set(conn, f"brief-feedback:{oid}", record)
+        else:
+            choices.save(record)  # you kept the proposal: that is worth knowing too
+        db.kv_set(conn, f"brief-draft:{oid}", None)
+    # keep the model's reasons for the projects it proposed in the same way
+    by_angle = {s["angle"]: s for s in draft["selected"]}
+    for s in final:
+        p = by_angle.get(s["angle"]) or {}
+        s.update(why=p.get("why", ""), stress=p.get("stress", ""))
+    _start_brief_job(oid, lambda log: brief_mod.build(oid, final, make_pdf=True, log=log))
+    return RedirectResponse(f"/o/{oid}#brief", 303)
+
+
+@app.post("/o/{oid}/brief/cancel")
+def cancel_brief(request: Request, oid: int):
+    with db.session() as conn:
+        db.kv_set(conn, f"brief-draft:{oid}", None)
+    return RedirectResponse(f"/o/{oid}#brief", 303)
+
+
+_distill_lock = threading.Lock()
+
+
+def _distill_rules() -> None:
+    from vs import choices
+    if not _distill_lock.acquire(blocking=False):
+        return
+    try:
+        choices.distill(portfolio_mod.load())
+    except Exception as e:  # the notes are saved; the rules just wait for the next note
+        print(f"Portfolio rules not updated: {e}")
+    finally:
+        _distill_lock.release()
+
+
+@app.post("/o/{oid}/brief/feedback")
+async def brief_feedback(request: Request, oid: int):
+    """Your reasons for the changes (all optional). Skip saves the changes alone."""
+    from vs import choices
+    form = await request.form()
+    skip = bool(form.get("skip"))
+    with db.session() as conn:
+        fb = db.kv_get(conn, f"brief-feedback:{oid}")
+        if fb:
+            for c in fb["changes"]:
+                c["why"] = "" if skip else str(form.get(f"why_{c['id']}") or "").strip()
+            fb["note"] = "" if skip else str(form.get("note") or "").strip()
+            choices.save(fb)
+            db.kv_set(conn, f"brief-feedback:{oid}", None)
+    if fb and (fb["note"] or any(c["why"] for c in fb["changes"])):
+        threading.Thread(target=_distill_rules, daemon=True).start()
+    return RedirectResponse(f"/o/{oid}?pf_saved=1#brief", 303)
+
+
+@app.post("/portfolio-rules")
+def save_portfolio_rules(request: Request, rules: str = Form(""), back: str = Form("/")):
+    from vs import choices
+    choices.set_rules(rules.splitlines())
+    return RedirectResponse(back if back.startswith("/") else "/", 303)
 
 
 @app.get("/o/{oid}/brief-status", response_class=HTMLResponse)
 def brief_status(request: Request, oid: int):
     with db.session() as conn:
-        brief = db.kv_get(conn, f"brief:{oid}")
-    return templates.TemplateResponse(request, "_brief.html", {"request": request, "o": {"id": oid}, "brief": brief,
-                                                      "brief_job": _brief_jobs.get(oid)})
+        extra = _brief_ctx(conn, oid)
+    return templates.TemplateResponse(request, "_brief_box.html", {"request": request, "o": {"id": oid}, **extra})
 
 
 @app.post("/refresh")
@@ -1086,6 +1210,70 @@ def restart(request: Request):
 def rescore(request: Request):
     threading.Thread(target=lambda: pipeline._safe(pipeline.rescore), daemon=True).start()
     return RedirectResponse(_back(request, "/"), 303)
+
+
+# ---------------------------------------------------------------- developer view (start-dev.bat)
+
+def _dev_only() -> None:
+    if not devtools.DEV:
+        raise HTTPException(404)
+
+
+@app.get("/dev/panel/system", response_class=HTMLResponse)
+def dev_system(request: Request):
+    _dev_only()
+    return templates.TemplateResponse(request, "_dev_system.html", {"request": request, "s": devtools.system(),
+                                                                    "human": devtools.human})
+
+
+@app.get("/dev/panel/logs", response_class=HTMLResponse)
+def dev_logs(request: Request):
+    _dev_only()
+    path, olog = devtools.ollama_log()
+    return templates.TemplateResponse(request, "_dev_logs.html", {
+        "request": request, "runs": devtools.recent_runs(), "run_log": devtools.last_run_log(),
+        "ollama_path": path, "ollama_log": olog, "update_log": devtools.tail(devtools.UPDATE_LOG, 40),
+        "update_running": devtools.update_running()})
+
+
+DEV_ACTIONS = {"gpu": "check_gpu", "sheet": "reload_sheet", "http-cache": "clear_http_cache", "update": "start_update"}
+
+
+@app.post("/dev/do/{name}", response_class=HTMLResponse)
+def dev_do(name: str):
+    _dev_only()
+    if name not in DEV_ACTIONS:
+        raise HTTPException(404)
+    if name in ("update", "http-cache") and pipeline.progress_state()["running"]:
+        return HTMLResponse("Wait until the refresh has finished (or stop it) first.")
+    try:
+        msg = getattr(devtools, DEV_ACTIONS[name])()
+    except Exception as e:  # a developer wants to see what went wrong, not a 500
+        msg = f"{type(e).__name__}: {e}"
+    return HTMLResponse(html_escape(msg))
+
+
+@app.get("/dev/o/{oid}.json")
+def dev_opportunity_json(oid: int):
+    _dev_only()
+    with db.session() as conn:
+        o = db.row_dict(conn.execute("SELECT * FROM opportunity WHERE id=?", (oid,)).fetchone())
+        m = db.row_dict(conn.execute("SELECT * FROM match WHERE opportunity_id=?", (oid,)).fetchone())
+        u = db.row_dict(conn.execute("SELECT * FROM user_state WHERE opportunity_key=?", ((o or {}).get("dedup_key"),)).fetchone())
+    if not o:
+        raise HTTPException(404)
+    o.pop("raw_text", None)  # at /dev/o/<id>/raw
+    return {"opportunity": o, "match": m, "user_state": u}
+
+
+@app.get("/dev/o/{oid}/raw")
+def dev_opportunity_raw(oid: int):
+    _dev_only()
+    with db.session() as conn:
+        row = conn.execute("SELECT raw_text FROM opportunity WHERE id=?", (oid,)).fetchone()
+    if not row:
+        raise HTTPException(404)
+    return Response(row["raw_text"] or "(no text saved)", media_type="text/plain; charset=utf-8")
 
 
 @app.get("/favicon.svg")

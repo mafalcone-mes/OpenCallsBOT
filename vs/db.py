@@ -157,6 +157,9 @@ def _migrate(conn) -> None:
             conn.execute(f"ALTER TABLE todo ADD COLUMN {col} {decl}")
     if "tiebreak" not in {r["name"] for r in conn.execute("PRAGMA table_info(match)")}:
         conn.execute("ALTER TABLE match ADD COLUMN tiebreak REAL")  # source and region: order only, not the score
+    if "kind" not in {r["name"] for r in conn.execute("PRAGMA table_info(http_cache)")}:
+        # 'text': the page's extracted text; empty: older rows holding the whole HTML
+        conn.execute("ALTER TABLE http_cache ADD COLUMN kind TEXT")
 
 
 # Opening the database is slow on Windows while another process writes to it

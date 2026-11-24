@@ -20,8 +20,10 @@
 ## Projects to present
 
 {% for s in selected -%}
-{{ loop.index }}. **{{ s.project }}**, as {{ s.category }}{% if s.images is defined %} ({{ s.images }} images){% endif %}
+{{ loop.index }}. **{{ s.project }}**, as {{ s.category }}{% if s.importance %}, {{ s.importance }}{% endif %}{% if s.images is defined %} ({{ s.images }} images){% endif %}
+   {%- if s.why %}
    - Why: {{ s.why }}
+   {%- endif %}
    {%- if s.stress %}
    - Stress: {{ s.stress }}
    {%- endif %}

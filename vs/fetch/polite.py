@@ -1,11 +1,12 @@
 """The only way the app talks to the web: robots.txt, per-domain delays,
-conditional GET and a 30-day cache of fetched bodies."""
+conditional GET and a cache of the text of call pages (not their HTML)."""
 
 from __future__ import annotations
 
 import random
 import threading
 import time
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from urllib.robotparser import RobotFileParser
@@ -82,18 +83,34 @@ class PoliteClient:
 
     # -- requests
 
-    def get(self, url: str, *, max_age: timedelta | None = None, method: str = "GET", **kwargs) -> httpx.Response | None:
-        """Polite request. With max_age, a cached body younger than that is
-        returned without touching the network."""
+    def get(self, url: str, *, max_age: timedelta | None = None, method: str = "GET",
+            keep: Callable[[str], str] | None = None, **kwargs) -> httpx.Response | None:
+        """Polite request.
+
+        Only pages fetched with `keep` are saved: `keep` turns the page into
+        what is worth keeping (a call page's text, ~20 times smaller than its
+        HTML), and the response then carries that instead of the HTML, fresh
+        or saved. A saved copy younger than `max_age` is returned without
+        touching the network; an older one is asked for again with ETag, and
+        a "not changed" answer reuses it. Other pages (source listings,
+        watched pages) are not saved: what the app needs from them is read
+        once, at once."""
         if not self.allowed(url):
             raise Blocked(f"robots.txt disallows {url}")
         host = urlparse(url).netloc
-        with db.session() as conn:
-            cached = conn.execute("SELECT * FROM http_cache WHERE url=?", (url,)).fetchone()
-        if cached and max_age and method == "GET":
+        cached = None
+        if keep and method == "GET":
+            with db.session() as conn:
+                cached = conn.execute("SELECT * FROM http_cache WHERE url=?", (url,)).fetchone()
+
+        def kept(row) -> str:
+            # rows saved before 'kind' existed hold the HTML
+            return (row["body"] or "") if row["kind"] == "text" else keep(row["body"] or "")
+
+        if cached and max_age:
             age = datetime.now(timezone.utc) - datetime.fromisoformat(cached["fetched_at"])
             if age < max_age:
-                return httpx.Response(cached["status"] or 200, text=cached["body"] or "", request=httpx.Request("GET", url))
+                return httpx.Response(cached["status"] or 200, text=kept(cached), request=httpx.Request("GET", url))
         headers = dict(kwargs.pop("headers", {}) or {})
         if cached and method == "GET":
             if cached["etag"]:
@@ -113,21 +130,25 @@ class PoliteClient:
             finally:
                 self._last[host] = time.monotonic()
         if r.status_code == 304 and cached:
+            text = kept(cached)
             with db.session() as conn:
-                conn.execute("UPDATE http_cache SET fetched_at=? WHERE url=?", (db.now(), url))
-            return httpx.Response(200, text=cached["body"] or "", request=r.request, headers={"x-from-cache": "304"})
+                conn.execute("UPDATE http_cache SET fetched_at=?, body=?, kind='text' WHERE url=?", (db.now(), text, url))
+            return httpx.Response(200, text=text, request=r.request, headers={"x-from-cache": "304"})
         if r.status_code in (401, 403, 429):
             raise Blocked(f"{r.status_code} from {url}")
+        if not keep or r.status_code >= 400:
+            return r
+        text = keep(r.text)
         ctype = r.headers.get("content-type", "")
         if method == "GET" and r.status_code == 200 and any(t in ctype for t in ("text", "xml", "json")):
             with db.session() as conn:
                 conn.execute(
-                    "INSERT INTO http_cache(url, etag, last_modified, fetched_at, status, body) VALUES(?,?,?,?,?,?) "
+                    "INSERT INTO http_cache(url, etag, last_modified, fetched_at, status, body, kind) VALUES(?,?,?,?,?,?,'text') "
                     "ON CONFLICT(url) DO UPDATE SET etag=excluded.etag, last_modified=excluded.last_modified, "
-                    "fetched_at=excluded.fetched_at, status=excluded.status, body=excluded.body",
-                    (url, r.headers.get("etag"), r.headers.get("last-modified"), db.now(), r.status_code, r.text),
+                    "fetched_at=excluded.fetched_at, status=excluded.status, body=excluded.body, kind='text'",
+                    (url, r.headers.get("etag"), r.headers.get("last-modified"), db.now(), r.status_code, text),
                 )
-        return r
+        return httpx.Response(r.status_code, text=text, request=r.request, headers={"content-type": "text/plain; charset=utf-8"})
 
     def prune_cache(self, days: int = 30) -> None:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()

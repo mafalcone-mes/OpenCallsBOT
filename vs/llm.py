@@ -3,7 +3,7 @@
 import json
 import threading
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 
 import httpx
 import numpy as np
@@ -87,10 +87,13 @@ def unload(model: str | None) -> None:
 _stats: dict[str, dict] = defaultdict(lambda: {"calls": 0, "seconds": 0.0, "prompt_tokens": 0, "prompt_s": 0.0,
                                                "output_tokens": 0, "output_s": 0.0, "load_s": 0.0})
 _stats_lock = threading.Lock()
+# The last few calls, for the live speed in the progress panel.
+_recent: deque = deque(maxlen=6)
 
 
 def _record(purpose: str, seconds: float, body: dict) -> None:
     with _stats_lock:
+        _recent.append((seconds, body.get("eval_count") or 0, (body.get("eval_duration") or 0) / 1e9))
         s = _stats[purpose]
         s["calls"] += 1
         s["seconds"] += seconds
@@ -107,6 +110,70 @@ def take_stats() -> dict[str, dict]:
         out = {k: dict(v) for k, v in _stats.items()}
         _stats.clear()
     return out
+
+
+def live_speed() -> dict | None:
+    """Speed of the last few model calls: seconds per call and words
+    (tokens) written per second. None before the first call."""
+    with _stats_lock:
+        recent = list(_recent)
+    if not recent:
+        return None
+    out_tok, out_s = sum(r[1] for r in recent), sum(r[2] for r in recent)
+    return {"calls": len(recent), "s_per_call": sum(r[0] for r in recent) / len(recent),
+            "tok_s": out_tok / out_s if out_s else None}
+
+
+# Below this, a 7-9B model is almost surely running on the CPU (on a laptop
+# GPU it writes 40-60 tok/s; on the CPU about 6).
+SLOW_TOK_S = 15
+
+
+# ---------------------------------------------------------------- GPU or CPU
+
+# What the last check found, shown on Home and in the progress panel.
+gpu_state: dict = {}
+
+
+def on_gpu(model: str) -> float | None:
+    """Share of the loaded model that sits in video memory (1.0 = all on the
+    GPU, 0.0 = all on the CPU), from Ollama's /api/ps. None when the model
+    isn't loaded or Ollama can't be asked."""
+    try:
+        r = httpx.get(f"{host()}/api/ps", timeout=5)
+        r.raise_for_status()
+    except httpx.HTTPError:
+        return None
+    for m in r.json().get("models", []):
+        if m.get("name") == model or m.get("model") == model:
+            size = m.get("size") or 0
+            return (m.get("size_vram") or 0) / size if size else None
+    return None
+
+
+def check_gpu(model: str | None = None) -> str | None:
+    """Load the model and check it is on the GPU. Ollama decides once, when it
+    loads a model: if the GPU looked busy or asleep then, the model stays on
+    the CPU (about 10 times slower) until it is unloaded. So when it is not on
+    the GPU, unload it and load it once more. Returns a warning to show, or
+    None when all is well (or there is no GPU to check)."""
+    model = model or chat_model()
+    warm(model)
+    share = on_gpu(model)
+    if share is not None and share < 0.9:
+        unload(model)
+        warm(model)
+        share = on_gpu(model)
+    gpu_state.clear()
+    gpu_state.update({"model": model, "share": share, "at": time.time()})
+    if share is None or share >= 0.9:
+        return None
+    where = "entirely on the CPU" if share < 0.05 else f"only {share:.0%} on the GPU"
+    msg = (f"The model {model} is running {where}: reading pages will be about 10 times slower. "
+           "If this computer has a graphics card, close Ollama (the minimized window or the tray icon), "
+           "start the app again, then check with 'ollama ps' that it says 100% GPU.")
+    gpu_state["warning"] = msg
+    return msg
 
 
 def describe_stats(purpose: str, s: dict) -> str:

@@ -109,12 +109,18 @@ def examples_hash() -> str:
 
 # ---------------------------------------------------------------- signals
 
-def log_signal(kind: str, **data) -> dict:
+def log_signal(kind: str, conn=None, **data) -> dict:
+    """Record one of your actions (kept in signals.jsonl, replayed by
+    rebuild_user_state) and apply it. `conn`: a connection already writing
+    (the refresh), so the change doesn't wait on its own transaction."""
     event = {"ts": datetime.now(timezone.utc).isoformat(timespec="seconds"), "kind": kind, **data}
     with open(SIGNALS_PATH, "a", encoding="utf-8") as f:
         f.write(json.dumps(event, ensure_ascii=False) + "\n")
-    with db.session() as conn:
+    if conn is not None:
         _apply(conn, event)
+    else:
+        with db.session() as c:
+            _apply(c, event)
     return event
 
 

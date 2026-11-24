@@ -20,7 +20,7 @@ from pathlib import Path
 COLUMNS = ["kind", "id", "name", "enabled", "url", "how_read", "settings", "weight", "opportunity_type",
            "tags", "city", "country", "studio_types", "description", "jobs_url", "notes"]
 # Settings that are common columns rather than part of the JSON blob.
-COMMON = {"adapter", "url", "weight", "kind_hint", "enabled", "name", "tags"}
+COMMON = {"adapter", "url", "weight", "kind_hint", "enabled", "name", "tags", "field_tags"}
 TTL_S = 300
 SNAPSHOT = Path(__file__).resolve().parent.parent / "sources-snapshot.csv"
 
@@ -126,6 +126,8 @@ def apply_to_prefs(data: dict) -> dict:
                     pass
             if r.get("opportunity_type"):
                 cfg["kind_hint"] = r["opportunity_type"]
+            if tags:  # the field(s) the source covers, e.g. "photography"
+                cfg["field_tags"] = tags
             sources[sid] = cfg
         elif kind == "watch" and _truthy(r.get("enabled")):
             watch.append({"name": r.get("name") or r["url"], "url": r["url"], "tags": tags})
@@ -226,7 +228,8 @@ def export_rows() -> list[dict]:
         out.append({"kind": "source", "id": sid, "name": cfg.get("org") or sid, "enabled": "TRUE" if cfg.get("enabled", True) else "FALSE",
                     "url": cfg.get("url", ""), "how_read": cfg.get("adapter", ""),
                     "settings": json.dumps(extra, ensure_ascii=False) if extra else "",
-                    "weight": cfg.get("weight", ""), "opportunity_type": cfg.get("kind_hint", "")})
+                    "weight": cfg.get("weight", ""), "opportunity_type": cfg.get("kind_hint", ""),
+                    "tags": ", ".join(cfg.get("field_tags", []))})
     for w in p.get("watchlist", []):
         out.append({"kind": "watch", "name": w["name"], "enabled": "TRUE", "url": w["url"], "how_read": "watch",
                     "tags": ", ".join(w.get("tags", []))})

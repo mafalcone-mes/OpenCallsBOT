@@ -1,0 +1,106 @@
+<div id="brief-box" {% if brief_job and brief_job.state == 'running' %}hx-get="/o/{{ o.id }}/brief-status" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
+{% if brief_job and brief_job.state == 'running' %}
+  <p class="muted">Working on it…</p>
+  <div class="log">{% for line in brief_job.log[-8:] %}{{ line }}
+{% endfor %}</div>
+{% elif draft_rows %}
+  <form method="post" action="/o/{{ o.id }}/brief/confirm" class="pf-editor">
+    <p class="small muted">Oppo's proposal for this call. Drag or use the arrows to change the order, tick the projects to show,
+      and set how much space each one gets. Nothing is exported until you confirm.</p>
+    {% if pf_empty %}<div class="notice" role="alert">Tick at least one project to show.</div>{% endif %}
+    <input type="hidden" name="order" value="{{ draft_rows | map(attribute='slug') | join(',') }}">
+    <ol class="pf-list">
+      {% for r in draft_rows %}
+      <li class="pf-row{{ '' if r.shown else ' off' }}" data-slug="{{ r.slug }}">
+        <span class="pf-grip" draggable="true" title="Drag to reorder">{{ icon('grip-vertical', 18) }}</span>
+        <label class="pf-show">
+          <input type="checkbox" name="show" value="{{ r.slug }}" {{ 'checked' if r.shown }}>
+          <span><strong>{{ r.name }}</strong>{% if r.year %} <span class="small muted">{{ r.year }}</span>{% endif %}</span>
+        </label>
+        <span class="pf-move">
+          <button type="button" class="btn ghost" data-move="-1">{{ icon('arrow-up', 16, 'Move ' ~ r.name ~ ' up') }}</button>
+          <button type="button" class="btn ghost" data-move="1">{{ icon('arrow-down', 16, 'Move ' ~ r.name ~ ' down') }}</button>
+        </span>
+        <div class="pf-controls">
+        {% if r.categories | length > 1 %}
+          <select name="angle_{{ r.slug }}" aria-label="Show {{ r.name }} as">
+            {% for key, label, n in r.categories %}<option value="{{ key }}" {{ 'selected' if key == r.angle }}>{{ label }} · {{ n }} images</option>{% endfor %}
+          </select>
+        {% else %}
+          {% set key, label, n = r.categories[0] %}
+          <input type="hidden" name="angle_{{ r.slug }}" value="{{ key }}">
+          <span class="small muted pf-cat">{{ label }} · {{ n }} images</span>
+        {% endif %}
+        <select name="imp_{{ r.slug }}" aria-label="Importance of {{ r.name }}">
+          {% for k, l in levels.items() %}<option value="{{ k }}" {{ 'selected' if k == r.importance }}>{{ l }}</option>{% endfor %}
+        </select>
+        </div>
+        {% if r.why %}<p class="small muted pf-why">Oppo: {{ r.why }}</p>{% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+    <p class="small muted">Main gets all its images, Supporting 3, Brief 1. If the call sets a page limit, the least important projects shrink first.</p>
+    <p style="display:flex; gap:8px; flex-wrap:wrap">
+      <button class="btn primary">{{ icon('check') }} Make the portfolio PDF</button>
+      <button class="btn ghost" formaction="/o/{{ o.id }}/brief/cancel" formnovalidate>Cancel</button>
+    </p>
+  </form>
+  <script>
+  (function () {
+    if (window.pfEditor) return; window.pfEditor = true;
+    function sync(list) { list.closest("form").querySelector("[name=order]").value =
+      Array.from(list.children).map(function (li) { return li.dataset.slug; }).join(","); }
+    document.addEventListener("click", function (e) {
+      var b = e.target.closest && e.target.closest(".pf-row [data-move]"); if (!b) return;
+      var li = b.closest(".pf-row"), list = li.parentNode;
+      if (b.dataset.move < 0 && li.previousElementSibling) list.insertBefore(li, li.previousElementSibling);
+      else if (b.dataset.move > 0 && li.nextElementSibling) list.insertBefore(li.nextElementSibling, li);
+      sync(list); b.focus();
+    });
+    document.addEventListener("change", function (e) {
+      if (e.target.name === "show") e.target.closest(".pf-row").classList.toggle("off", !e.target.checked);
+    });
+    var dragged = null;
+    document.addEventListener("dragstart", function (e) {
+      var g = e.target.closest && e.target.closest(".pf-grip"); if (!g) return;
+      dragged = g.closest(".pf-row"); dragged.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", dragged.dataset.slug);
+      try { e.dataTransfer.setDragImage(dragged, 16, 16); } catch (_) {}
+    });
+    document.addEventListener("dragover", function (e) {
+      if (!dragged) return; e.preventDefault();
+      var li = e.target.closest && e.target.closest(".pf-row");
+      if (!li || li === dragged || li.parentNode !== dragged.parentNode) return;
+      var r = li.getBoundingClientRect();
+      li.parentNode.insertBefore(dragged, e.clientY - r.top > r.height / 2 ? li.nextSibling : li);
+    });
+    document.addEventListener("drop", function (e) { if (dragged) e.preventDefault(); });
+    document.addEventListener("dragend", function () {
+      if (!dragged) return; dragged.classList.remove("dragging"); sync(dragged.parentNode); dragged = null;
+    });
+  })();
+  </script>
+{% else %}
+  {% if brief_job and brief_job.state == 'failed' %}<div class="notice">Brief failed: {{ brief_job.error }}</div>{% endif %}
+  {% if brief %}
+    <p class="small muted">Last prepared {{ brief.at[:16] | replace('T', ' ') }}</p>
+    <ol style="margin: 12px 0 12px 24px">
+      {% for s in brief.selected %}<li><strong>{{ s.project }}</strong> as {{ s.category }}{% if s.importance %} · {{ levels.get(s.importance, s.importance) }}{% endif %}{% if s.images is defined %} · {{ s.images }} images{% endif %}{% if s.why or s.stress %}<br><span class="small muted">{{ s.why }}{% if s.stress %} Stress: {{ s.stress }}{% endif %}</span>{% endif %}</li>{% endfor %}
+    </ol>
+    <p style="display:flex; gap:8px; flex-wrap:wrap">
+      <a class="btn" href="/files?path={{ (brief.dir ~ '/brief.md') | urlencode }}" target="_blank">brief.md</a>
+      {% if brief.brief_pdf %}<a class="btn" href="/files?path={{ brief.brief_pdf | urlencode }}" target="_blank">brief.pdf</a>{% endif %}
+      {% if brief.portfolio_pdf and brief.portfolio_pdf.path %}<a class="btn" href="/files?path={{ brief.portfolio_pdf.path | urlencode }}" target="_blank">portfolio.pdf</a>{% endif %}
+      <a class="btn" href="/files?path={{ (brief.dir ~ '/deadlines.ics') | urlencode }}">deadlines.ics</a>
+    </p>
+    {% if brief.portfolio_pdf and brief.portfolio_pdf.error %}
+      <div class="notice">Portfolio PDF not generated: {{ brief.portfolio_pdf.error }}{% if brief.portfolio_pdf.manual %}<br>Run it by hand: <code>{{ brief.portfolio_pdf.manual }}</code>{% endif %}</div>
+    {% endif %}
+    <p class="small muted">Folder: {{ brief.dir }}</p>
+  {% endif %}
+  <form method="post" action="/o/{{ o.id }}/brief" style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
+    <button class="btn" name="pdf" value="1">{{ 'Choose the projects again' if brief else 'Prepare brief + portfolio PDF' }}</button>
+    <button class="btn" name="pdf" value="0">Brief only</button>
+  </form>
+{% endif %}
+</div>

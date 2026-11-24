@@ -11,8 +11,9 @@ Run at the end of every refresh:
    'removed', so its page is never downloaded or read again.
 3. Saved calls and applications are never removed: once over they are the
    Archive, your record of what you applied to and how it went.
-4. Saved web pages older than `cache_days` go, and the database file is
-   compacted (VACUUM) when that frees a lot of space.
+4. Saved copies of call pages (their text only, see vs/fetch/polite.py)
+   older than `cache_days` go, and the database file is compacted (VACUUM)
+   when that frees a lot of space.
 
 Settings: [housekeeping] in preferences.toml."""
 
@@ -84,7 +85,9 @@ def clean(conn, prefs: dict, dry_run: bool = False) -> dict:
     s = settings(prefs)
     p = plan(conn, prefs)
     cutoff = _ago(s["cache_days"])
-    old_cache = conn.execute("SELECT COUNT(*), COALESCE(SUM(LENGTH(body)), 0) FROM http_cache WHERE fetched_at < ?", (cutoff,)).fetchone()
+    # Old copies go, and so do whole-HTML copies saved before only the text was kept.
+    old = "fetched_at < ? OR COALESCE(kind, '') != 'text'"
+    old_cache = conn.execute(f"SELECT COUNT(*), COALESCE(SUM(LENGTH(body)), 0) FROM http_cache WHERE {old}", (cutoff,)).fetchone()
     out = {"at": db.now(), "gone": len(p["gone"]), "closed": len(p["closed"]) + len(p["gone_removed"]),
            "noise": len(p["noise"]), "far": len(p["far"]), "cache_pages": old_cache[0], "cache_bytes": old_cache[1]}
     out["removed"] = out["closed"] + out["noise"] + out["far"]
@@ -92,7 +95,7 @@ def clean(conn, prefs: dict, dry_run: bool = False) -> dict:
         return out
     conn.executemany("UPDATE opportunity SET status = 'expired' WHERE id = ?", [(i,) for i in p["gone"]])
     _remove(conn, p["closed"] + p["gone_removed"] + p["noise"] + p["far"])
-    conn.execute("DELETE FROM http_cache WHERE fetched_at < ?", (cutoff,))
+    conn.execute(f"DELETE FROM http_cache WHERE {old}", (cutoff,))
     log = (db.kv_get(conn, "cleanup_log") or [])[-200:]
     db.kv_set(conn, "cleanup_log", log + [out])
     return out
