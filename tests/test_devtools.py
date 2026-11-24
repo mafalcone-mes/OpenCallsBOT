@@ -73,3 +73,13 @@ def test_actions_answer_with_a_message(dev_on, monkeypatch):
     assert "not reachable" in client.post("/dev/do/gpu").text
     assert "saved pages" in client.post("/dev/do/http-cache").text
     assert client.post("/dev/do/nothing").status_code == 404
+
+
+def test_a_second_copy_of_the_app_opens_on_the_next_free_port():
+    import socket
+    from vs.cli import free_port
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as busy:
+        busy.bind(("127.0.0.1", 0))
+        busy.listen()
+        taken = busy.getsockname()[1]
+        assert free_port(taken) != taken

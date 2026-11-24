@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import socket
 import subprocess
 import sys
 import webbrowser
@@ -80,9 +81,27 @@ def main(argv: list[str] | None = None) -> None:
         print(json.dumps(add_example(args.label, url=args.url, text=text, why=args.why), indent=2))
 
 
+def free_port(port: int, tries: int = 20) -> int:
+    """`port`, or the next one nothing listens on yet."""
+    for p in range(port, port + tries):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(("127.0.0.1", p))
+                return p
+            except OSError:
+                continue
+    raise SystemExit(f"Ports {port}-{port + tries - 1} are all in use: close another copy of the app")
+
+
 def serve(port: int, *, browser: bool) -> None:
     """Run the dashboard in a child process and start it again whenever it
     exits with RESTART_CODE, so a restart loads the current code and settings."""
+    free = free_port(port)
+    if free != port:
+        # Another copy of the app (yours, a friend's, the design board) has
+        # this port: opening it would show that copy's portfolio and data.
+        print(f"Port {port} is used by another copy of the app: this one opens on {free}.", flush=True)
+        port = free
     cmd = [sys.executable, "-m", "vs.cli", "serve", "--child", "--port", str(port)]
     if browser:
         webbrowser.open(f"http://127.0.0.1:{port}/")
